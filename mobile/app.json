@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "NDOLOLY",
+    "slug": "ndololy",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "ndololy",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "NDOLOLY a besoin de la camera pour la photo de verification en temps reel.",
+        "NSMicrophoneUsageDescription": "NDOLOLY a besoin du micro pour les messages vocaux.",
+        "NSPhotoLibraryUsageDescription": "NDOLOLY a besoin d'acceder a vos photos.",
+        "NSPhotoLibraryAddUsageDescription": "NDOLOLY a besoin d'ajouter des photos.",
+        "NSLocationWhenInUseUsageDescription": "NDOLOLY utilise votre position pour afficher les profils proches."
+      }
+    },
+    "android": {
+      "package": "com.ndololy.app",
+      "versionCode": 1,
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "POST_NOTIFICATIONS"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
