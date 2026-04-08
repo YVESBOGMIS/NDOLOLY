@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "loveconnect-backend",
   "version": "1.0.0",
   "description": "Backend API for LoveConnect",
@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
-    "seed:admin": "node scripts/seed-admin.js"
+    "seed:admin": "node scripts/seed-admin.js",
+    "import:mongo": "node scripts/import-mongodb.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -17,10 +18,13 @@
     "express-rate-limit": "^7.4.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.5.4",
+    "mariadb": "^3.5.2",
+    "mongodb": "^7.1.1",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.15.2",
     "nodemailer": "^6.9.13",
+    "sequelize": "^6.37.7",
     "socket.io": "^4.7.5"
   },
   "devDependencies": {

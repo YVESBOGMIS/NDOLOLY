@@ -1,38 +1,29 @@
-﻿require("dotenv").config();
-const mongoose = require("mongoose");
-
-const uri = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/loveconnect";
-
-const matchSchema = new mongoose.Schema({
-  user1_id: mongoose.Schema.Types.ObjectId,
-  user2_id: mongoose.Schema.Types.ObjectId
-}, { collection: "matches" });
-
-const userSchema = new mongoose.Schema({
-  gender: String
-}, { collection: "users" });
-
-const Match = mongoose.model("MatchCleanup", matchSchema);
-const User = mongoose.model("UserCleanup2", userSchema);
+require("dotenv").config();
+const { connectDB, models } = require("../src/db");
 
 const run = async () => {
-  await mongoose.connect(uri);
+  await connectDB();
 
-  const matches = await Match.find({}).lean();
+  const matches = await models.Match.findAll({
+    attributes: ["id", "user1_id", "user2_id"]
+  });
   let removed = 0;
 
   for (const match of matches) {
-    const user1 = await User.findById(match.user1_id).lean();
-    const user2 = await User.findById(match.user2_id).lean();
+    const [user1, user2] = await Promise.all([
+      models.User.findByPk(match.user1_id, { attributes: ["id", "gender"] }),
+      models.User.findByPk(match.user2_id, { attributes: ["id", "gender"] })
+    ]);
+
     if (!user1 || !user2) continue;
     if (user1.gender && user2.gender && user1.gender === user2.gender) {
-      await Match.deleteOne({ _id: match._id });
+      await match.destroy();
       removed += 1;
     }
   }
 
   console.log(`Removed ${removed} same-gender matches`);
-  await mongoose.disconnect();
+  process.exit(0);
 };
 
 run().catch((err) => {

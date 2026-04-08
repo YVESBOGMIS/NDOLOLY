@@ -10,9 +10,9 @@ const auth = async (req, res, next) => {
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET || "dev_secret_change_me");
-    const user = await models.User.findById(payload.id)
-      .select("email phone name role suspended verified reverification_required")
-      .lean();
+    const user = await models.User.findByPk(payload.id, {
+      attributes: ["id", "email", "phone", "name", "role", "suspended", "verified", "reverification_required"]
+    });
 
     if (!user) {
       return res.status(401).json({ error: "User not found" });

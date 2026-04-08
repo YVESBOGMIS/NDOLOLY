@@ -1,11 +1,6 @@
-# Deploiement backend gratuit
+# Deploiement backend avec MariaDB
 
-Ce projet peut etre deploye gratuitement pour un environnement public de test.
-
-La combinaison la plus simple pour ce code aujourd'hui :
-
-- backend Node.js sur Render
-- base MongoDB sur MongoDB Atlas
+Ce backend utilise maintenant MariaDB via Sequelize.
 
 ## 1. Important
 
@@ -13,7 +8,7 @@ Ce backend stocke encore les uploads en local dans :
 
 - `backend/uploads`
 
-Sur un hebergeur gratuit type Render, ce stockage n'est pas adapte a une vraie production durable.
+Sur un hebergeur type Render, ce stockage n'est pas adapte a une vraie production durable.
 
 Consequence :
 
@@ -30,28 +25,32 @@ Exemples classiques :
 - AWS S3
 - Cloudflare R2
 
-## 2. Option recommandee a cout zero pour commencer
+## 2. Base de donnees
 
-### Base de donnees
+Le backend attend une base MariaDB accessible depuis le serveur Node.js.
 
-MongoDB Atlas :
+Deux options de configuration sont supportees :
 
-- creer un cluster M0 gratuit
-- creer un utilisateur base de donnees
-- ajouter l'IP `0.0.0.0/0` temporairement pour les tests
-- recuperer l'URI MongoDB Atlas
+- une URL unique via `DATABASE_URL`
+- ou des variables separees `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
 
-### Backend
+Si la base impose TLS, activer aussi :
+
+- `DB_SSL=true`
+
+## 3. Backend
 
 Render :
 
 - connecter le depot Git
 - Render detectera le fichier [render.yaml](C:/Users/YVES%20BOGMIS/Desktop/loveconnect/render.yaml)
+- renseigner `DATABASE_URL` avec l'URL MariaDB de ton fournisseur
 - deployer le service `ndololy-backend`
 
-## 3. Variables a renseigner sur Render
+## 4. Variables a renseigner
 
-- `MONGODB_URI`
+- `DATABASE_URL` ou `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD`
+- `DB_SSL`
 - `JWT_SECRET`
 - `SMTP_HOST`
 - `SMTP_PORT`
@@ -61,7 +60,7 @@ Render :
 - `APP_NAME`
 - `APP_FROM_EMAIL`
 
-## 4. URL de verification
+## 5. URL de verification
 
 Une fois deploye, tester :
 
@@ -75,7 +74,7 @@ Reponse attendue :
 {"status":"ok"}
 ```
 
-## 5. Impact sur le mobile
+## 6. Impact sur le mobile
 
 Quand le backend public sera pret :
 
@@ -88,11 +87,6 @@ Exemple :
 https://ton-backend.onrender.com
 ```
 
-## 6. Etape suivante obligatoire pour une vraie prod
+## 7. Etape suivante utile
 
-Avant publication large sur Play Store, il faudra faire au minimum :
-
-1. stockage media persistant
-2. variables de prod separees
-3. domaine propre si possible
-4. verification du flux email
+Si tu as deja des donnees MongoDB en production, il faudra ajouter un script d'import MongoDB -> MariaDB.

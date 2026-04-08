@@ -14,26 +14,38 @@ const run = async () => {
   await connectDB();
 
   const passwordHash = bcrypt.hashSync(password, 10);
-  const user = await models.User.findOneAndUpdate(
-    { email },
-    {
-      $set: {
-        email,
-        password_hash: passwordHash,
-        name,
-        phone: null,
-        birthdate: "1990-01-01",
-        gender: "admin",
-        location: "Backoffice",
-        verified: true,
-        verified_photo: true,
-        role: "admin",
-        suspended: false,
-        last_active_at: new Date()
-      }
-    },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
-  );
+  let user = await models.User.findOne({ where: { email } });
+
+  if (user) {
+    user.email = email;
+    user.password_hash = passwordHash;
+    user.name = name;
+    user.phone = null;
+    user.birthdate = "1990-01-01";
+    user.gender = "admin";
+    user.location = "Backoffice";
+    user.verified = true;
+    user.verified_photo = true;
+    user.role = "admin";
+    user.suspended = false;
+    user.last_active_at = new Date();
+    await user.save();
+  } else {
+    user = await models.User.create({
+      email,
+      password_hash: passwordHash,
+      name,
+      phone: null,
+      birthdate: "1990-01-01",
+      gender: "admin",
+      location: "Backoffice",
+      verified: true,
+      verified_photo: true,
+      role: "admin",
+      suspended: false,
+      last_active_at: new Date()
+    });
+  }
 
   process.stdout.write(`Admin ready: ${user.email}\n`);
   process.exit(0);

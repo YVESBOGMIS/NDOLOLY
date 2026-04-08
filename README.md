@@ -2,7 +2,7 @@
 
 Projet complet de site de rencontre avec :
 
-- un backend `Node.js + Express + MongoDB`
+- un backend `Node.js + Express + MariaDB`
 - un frontend web `Vue 3 + Vite`
 - une application mobile `React Native + Expo + Expo Router`
 - un dashboard administrateur web connecte au meme backend
@@ -27,7 +27,7 @@ Le depot est organise en trois applications principales :
 Flux global :
 
 1. le frontend web et le mobile appellent le backend HTTP
-2. le backend lit et ecrit dans MongoDB
+2. le backend lit et ecrit dans MariaDB
 3. les uploads sont stockes localement dans `backend/uploads`
 4. le dashboard admin utilise la meme API que l'application
 
@@ -70,7 +70,7 @@ loveconnect/
 
 - `Node.js`
 - `Express`
-- `MongoDB + Mongoose`
+- `MariaDB + Sequelize`
 - `Socket.IO`
 - `JWT`
 - `Multer` pour les uploads
@@ -96,7 +96,7 @@ A installer sur la machine :
 
 - `Node.js` 20+ ou plus recent
 - `npm`
-- `MongoDB`
+- `MariaDB`
 - pour le mobile :
   - soit `Expo Go` sur telephone
   - soit Android Studio + SDK Android si tu veux un emulateur Android natif
@@ -126,7 +126,12 @@ Exemple minimal :
 ```env
 PORT=4000
 JWT_SECRET=change_me_in_production
-MONGODB_URI=mongodb://127.0.0.1:27017/loveconnect
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_NAME=loveconnect
+DB_USER=root
+DB_PASSWORD=
+DB_SSL=false
 ```
 
 Variables email actuellement utilisees dans le projet :
@@ -284,13 +289,16 @@ Ports courants :
 
 ## 10. Base de donnees
 
-Base MongoDB utilisee par defaut :
+Base MariaDB attendue par defaut :
 
 ```text
-mongodb://127.0.0.1:27017/loveconnect
+host=127.0.0.1
+port=3306
+database=loveconnect
+user=root
 ```
 
-La connexion est definie dans [backend/src/db.js](C:/Users/YVES%20BOGMIS/Desktop/loveconnect/backend/src/db.js).
+La connexion est definie dans [backend/src/db.js](C:/Users/YVES%20BOGMIS/Desktop/loveconnect/backend/src/db.js). Tu peux aussi utiliser `DATABASE_URL`.
 
 ## 11. Creer un compte administrateur
 
@@ -313,7 +321,27 @@ Connexion admin ensuite :
 - email : `admin@ndololy.com`
 - mot de passe : `MotDePasseFort123`
 
-## 12. Fonctionnalites principales du projet
+## 12. Import MongoDB vers MariaDB
+
+Si tu as encore une ancienne base MongoDB, un script d'import est disponible :
+
+```powershell
+cd "C:\Users\YVES BOGMIS\Desktop\loveconnect\backend"
+npm run import:mongo -- --mongo-uri=mongodb://127.0.0.1:27017/loveconnect
+```
+
+Pour vider d'abord les tables MariaDB cibles :
+
+```powershell
+npm run import:mongo -- --mongo-uri=mongodb://127.0.0.1:27017/loveconnect --force
+```
+
+Variables compatibles :
+
+- `MONGO_SOURCE_URI`
+- `MONGO_SOURCE_DB`
+
+## 13. Fonctionnalites principales du projet
 
 ### Cote utilisateur
 
@@ -426,7 +454,7 @@ Le dashboard admin est servi par le frontend web et consomme les routes `/admin/
 ### Backend
 
 - [index.js](C:/Users/YVES%20BOGMIS/Desktop/loveconnect/backend/src/index.js) : point d'entree API
-- [db.js](C:/Users/YVES%20BOGMIS/Desktop/loveconnect/backend/src/db.js) : schemas MongoDB
+- [db.js](C:/Users/YVES%20BOGMIS/Desktop/loveconnect/backend/src/db.js) : modeles Sequelize et connexion MariaDB
 - [auth.js](C:/Users/YVES%20BOGMIS/Desktop/loveconnect/backend/src/routes/auth.js) : inscription, login, login admin
 - [profile.js](C:/Users/YVES%20BOGMIS/Desktop/loveconnect/backend/src/routes/profile.js) : profil, verification photo, decouverte
 - [match.js](C:/Users/YVES%20BOGMIS/Desktop/loveconnect/backend/src/routes/match.js) : likes, super likes, pass, matches

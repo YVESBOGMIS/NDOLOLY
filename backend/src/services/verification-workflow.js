@@ -1,4 +1,4 @@
-const { models } = require("../db");
+const { models, Op } = require("../db");
 
 const ACTIVE_LIKE_STATUSES = ["like", "superlike"];
 const PENDING_LIKE_STATUSES = ["pending_like", "pending_superlike"];
@@ -6,27 +6,24 @@ const PENDING_LIKE_STATUSES = ["pending_like", "pending_superlike"];
 const orderIds = (a, b) => {
   const aStr = String(a);
   const bStr = String(b);
-  return aStr < bStr ? [a, b] : [b, a];
+  return aStr < bStr ? [aStr, bStr] : [bStr, aStr];
 };
 
 const ensureMatch = async (userA, userB) => {
   const [user1, user2] = orderIds(userA, userB);
+  const where = { user1_id: user1, user2_id: user2 };
+  const existing = await models.Match.findOne({ where });
+  if (existing) return existing;
+
   try {
-    const match = await models.Match.findOneAndUpdate(
-      { user1_id: user1, user2_id: user2 },
-      {
-        $setOnInsert: {
-          user1_id: user1,
-          user2_id: user2,
-          created_at: new Date()
-        }
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-    return match;
+    return await models.Match.create({
+      user1_id: user1,
+      user2_id: user2,
+      created_at: new Date()
+    });
   } catch (err) {
-    if (err && err.code === 11000) {
-      return models.Match.findOne({ user1_id: user1, user2_id: user2 });
+    if (err?.name === "SequelizeUniqueConstraintError") {
+      return models.Match.findOne({ where });
     }
     throw err;
   }
@@ -35,14 +32,17 @@ const ensureMatch = async (userA, userB) => {
 const emitMatch = (app, userId, otherId, match) => {
   const io = app?.get?.("io");
   if (!io || !match) return;
-  io.to(`user:${userId}`).emit("match:new", match);
-  io.to(`user:${otherId}`).emit("match:new", match);
+  const payload = match.toJSON ? match.toJSON() : match;
+  io.to(`user:${userId}`).emit("match:new", payload);
+  io.to(`user:${otherId}`).emit("match:new", payload);
 };
 
 const activatePendingLikesForUser = async (userId, app) => {
-  const pendingRows = await models.Like.find({
-    from_user_id: userId,
-    status: { $in: PENDING_LIKE_STATUSES }
+  const pendingRows = await models.Like.findAll({
+    where: {
+      from_user_id: userId,
+      status: { [Op.in]: PENDING_LIKE_STATUSES }
+    }
   });
 
   let activatedLikes = 0;
@@ -55,24 +55,30 @@ const activatePendingLikesForUser = async (userId, app) => {
     activatedLikes += 1;
 
     if (nextStatus === "superlike") {
-      await models.Superlike.findOneAndUpdate(
-        { from_user_id: row.from_user_id, to_user_id: row.to_user_id },
-        {
-          $setOnInsert: {
-            from_user_id: row.from_user_id,
-            to_user_id: row.to_user_id,
-            created_at: row.created_at || new Date()
-          }
+      const [record] = await models.Superlike.findOrCreate({
+        where: {
+          from_user_id: row.from_user_id,
+          to_user_id: row.to_user_id
         },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      );
+        defaults: {
+          from_user_id: row.from_user_id,
+          to_user_id: row.to_user_id,
+          created_at: row.created_at || new Date()
+        }
+      });
+      if (!record.created_at && row.created_at) {
+        record.created_at = row.created_at;
+        await record.save();
+      }
     }
 
     const reciprocal = await models.Like.findOne({
-      from_user_id: row.to_user_id,
-      to_user_id: row.from_user_id,
-      status: { $in: ACTIVE_LIKE_STATUSES }
-    }).lean();
+      where: {
+        from_user_id: row.to_user_id,
+        to_user_id: row.from_user_id,
+        status: { [Op.in]: ACTIVE_LIKE_STATUSES }
+      }
+    });
 
     if (reciprocal) {
       const match = await ensureMatch(row.from_user_id, row.to_user_id);

@@ -1,4 +1,4 @@
-﻿const express = require("express");
+const express = require("express");
 const { models } = require("../db");
 const { auth } = require("../middleware/auth");
 
@@ -8,17 +8,14 @@ router.post("/block", auth, async (req, res) => {
   const { userId } = req.body || {};
   if (!userId) return res.status(400).json({ error: "userId required" });
 
-  await models.Block.findOneAndUpdate(
-    { blocker_id: req.user.id, blocked_id: userId },
-    {
-      $setOnInsert: {
-        blocker_id: req.user.id,
-        blocked_id: userId,
-        created_at: new Date()
-      }
-    },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
-  );
+  await models.Block.findOrCreate({
+    where: { blocker_id: req.user.id, blocked_id: userId },
+    defaults: {
+      blocker_id: req.user.id,
+      blocked_id: userId,
+      created_at: new Date()
+    }
+  });
 
   return res.json({ message: "User blocked" });
 });

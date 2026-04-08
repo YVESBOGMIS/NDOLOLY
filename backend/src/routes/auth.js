@@ -1,4 +1,4 @@
-﻿const express = require("express");
+const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { models } = require("../db");
@@ -29,7 +29,7 @@ const normalizePhone = (value) => {
 
 const signToken = (user) => jwt.sign(
   {
-    id: user._id,
+    id: user.id,
     email: user.email,
     phone: user.phone,
     name: user.name,
@@ -39,14 +39,14 @@ const signToken = (user) => jwt.sign(
   { expiresIn: "7d" }
 );
 
-const findUserByContact = (email, phone) => {
+const findUserByContact = async (email, phone) => {
   const normalizedEmail = normalizeEmail(email);
   const normalizedPhone = normalizePhone(phone);
   if (normalizedEmail) {
-    return models.User.findOne({ email: normalizedEmail });
+    return models.User.findOne({ where: { email: normalizedEmail } });
   }
   if (normalizedPhone) {
-    return models.User.findOne({ phone: normalizedPhone });
+    return models.User.findOne({ where: { phone: normalizedPhone } });
   }
   return null;
 };
@@ -62,6 +62,11 @@ const createOtp = async (userId) => {
   });
   return { code, expiresAt };
 };
+
+const isUniqueConstraintError = (err, field) => (
+  err?.name === "SequelizeUniqueConstraintError"
+  && (!field || err.errors?.some((item) => item.path === field))
+);
 
 const normalizeChildrenCount = (value) => {
   if (value === null || value === undefined || value === "") return null;
@@ -114,13 +119,13 @@ router.post("/register", async (req, res) => {
   }
 
   if (normalizedEmail) {
-    const emailExists = await models.User.findOne({ email: normalizedEmail });
+    const emailExists = await models.User.findOne({ where: { email: normalizedEmail } });
     if (emailExists) {
       return res.status(409).json({ error: "Adresse email deja utilisee" });
     }
   }
   if (normalizedPhone) {
-    const phoneExists = await models.User.findOne({ phone: normalizedPhone });
+    const phoneExists = await models.User.findOne({ where: { phone: normalizedPhone } });
     if (phoneExists) {
       return res.status(409).json({ error: "Numero de telephone deja utilise" });
     }
@@ -167,21 +172,18 @@ router.post("/register", async (req, res) => {
       last_active_at: new Date()
     });
   } catch (err) {
-    if (err && err.code === 11000) {
-      if (err.keyPattern?.email) {
-        return res.status(409).json({ error: "Adresse email deja utilisee" });
-      }
-      if (err.keyPattern?.phone) {
-        return res.status(409).json({ error: "Numero de telephone deja utilise" });
-      }
-      return res.status(409).json({ error: "User already exists" });
+    if (isUniqueConstraintError(err, "email")) {
+      return res.status(409).json({ error: "Adresse email deja utilisee" });
+    }
+    if (isUniqueConstraintError(err, "phone")) {
+      return res.status(409).json({ error: "Numero de telephone deja utilise" });
     }
     throw err;
   }
 
-  const otp = await createOtp(user._id);
-  if (email) {
-    sendOtpEmail({ to: email, code: otp.code, purpose: "verify" }).catch((err) => {
+  const otp = await createOtp(user.id);
+  if (normalizedEmail) {
+    sendOtpEmail({ to: normalizedEmail, code: otp.code, purpose: "verify" }).catch((err) => {
       // eslint-disable-next-line no-console
       console.error("Failed to send verification email", err);
     });
@@ -201,10 +203,13 @@ router.post("/verify", async (req, res) => {
   }
 
   const otp = await models.Otp.findOne({
-    user_id: user._id,
-    code,
-    verified: false
-  }).sort({ created_at: -1 });
+    where: {
+      user_id: user.id,
+      code,
+      verified: false
+    },
+    order: [["created_at", "DESC"]]
+  });
 
   if (!otp) {
     return res.status(400).json({ error: "Invalid code" });
@@ -225,9 +230,7 @@ router.post("/verify", async (req, res) => {
 
 router.post("/login", async (req, res) => {
   const { email, phone, password } = req.body || {};
-  const normalizedEmail = normalizeEmail(email);
-  const normalizedPhone = normalizePhone(phone);
-  const user = await findUserByContact(normalizedEmail, normalizedPhone);
+  const user = await findUserByContact(email, phone);
   if (!user) {
     return res.status(401).json({ error: "Invalid credentials" });
   }
@@ -257,7 +260,7 @@ router.post("/admin/login", async (req, res) => {
     return res.status(400).json({ error: "Email and password required" });
   }
 
-  const user = await models.User.findOne({ email: normalizedEmail });
+  const user = await models.User.findOne({ where: { email: normalizedEmail } });
   if (!user || user.role !== "admin") {
     return res.status(401).json({ error: "Invalid admin credentials" });
   }
@@ -277,7 +280,8 @@ router.post("/admin/login", async (req, res) => {
   return res.json({
     token,
     admin: {
-      id: user._id,
+      id: user.id,
+      _id: user.id,
       name: user.name,
       email: user.email,
       role: user.role
@@ -292,9 +296,10 @@ router.post("/request-reset", async (req, res) => {
     return res.status(404).json({ error: "User not found" });
   }
 
-  const otp = await createOtp(user._id);
-  if (email) {
-    sendOtpEmail({ to: email, code: otp.code, purpose: "reset" }).catch((err) => {
+  const otp = await createOtp(user.id);
+  const normalizedEmail = normalizeEmail(email);
+  if (normalizedEmail) {
+    sendOtpEmail({ to: normalizedEmail, code: otp.code, purpose: "reset" }).catch((err) => {
       // eslint-disable-next-line no-console
       console.error("Failed to send reset email", err);
     });
@@ -312,9 +317,10 @@ router.post("/resend-otp", async (req, res) => {
     return res.status(400).json({ error: "Account already verified" });
   }
 
-  const otp = await createOtp(user._id);
-  if (email) {
-    sendOtpEmail({ to: email, code: otp.code, purpose: "verify" }).catch((err) => {
+  const otp = await createOtp(user.id);
+  const normalizedEmail = normalizeEmail(email);
+  if (normalizedEmail) {
+    sendOtpEmail({ to: normalizedEmail, code: otp.code, purpose: "verify" }).catch((err) => {
       // eslint-disable-next-line no-console
       console.error("Failed to resend verification email", err);
     });
@@ -330,10 +336,13 @@ router.post("/reset", async (req, res) => {
   }
 
   const otp = await models.Otp.findOne({
-    user_id: user._id,
-    code,
-    verified: false
-  }).sort({ created_at: -1 });
+    where: {
+      user_id: user.id,
+      code,
+      verified: false
+    },
+    order: [["created_at", "DESC"]]
+  });
 
   if (!otp) {
     return res.status(400).json({ error: "Invalid code" });

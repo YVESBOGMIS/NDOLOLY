@@ -1,6 +1,5 @@
 const express = require("express");
-const mongoose = require("mongoose");
-const { models } = require("../db");
+const { models, Op } = require("../db");
 const { auth, requireAdmin } = require("../middleware/auth");
 const { activatePendingLikesForUser } = require("../services/verification-workflow");
 
@@ -8,13 +7,15 @@ const router = express.Router();
 
 router.use(auth, requireAdmin);
 
-const userRoleFilter = {
-  $or: [{ role: "user" }, { role: { $exists: false } }]
+const userRoleWhere = {
+  [Op.or]: [{ role: "user" }, { role: null }]
 };
 
-const toObjectId = (value) => {
-  if (!mongoose.Types.ObjectId.isValid(value)) return null;
-  return new mongoose.Types.ObjectId(value);
+const andWhere = (...clauses) => {
+  const filtered = clauses.filter(Boolean);
+  if (filtered.length === 0) return {};
+  if (filtered.length === 1) return filtered[0];
+  return { [Op.and]: filtered };
 };
 
 const safeRemoveUpload = async (photoPath) => {
@@ -34,28 +35,35 @@ const safeRemoveUpload = async (photoPath) => {
   }
 };
 
-const pickSafeUser = (user) => ({
-  id: user._id,
-  name: user.name,
-  email: user.email || "",
-  phone: user.phone || "",
-  gender: user.gender || "",
-  location: user.location || "",
-  verified: !!user.verified,
-  verified_photo: !!user.verified_photo,
-  reverification_required: !!user.reverification_required,
-  premium: !!user.premium,
-  incognito_mode: !!user.premium && !!user.incognito_mode,
-  suspended: !!user.suspended,
-  role: user.role || "user",
-  photos: user.photos || [],
-  created_at: user.created_at,
-  last_active_at: user.last_active_at
-});
+const toPlain = (row) => (row?.toJSON ? row.toJSON() : row);
+
+const pickSafeUser = (input) => {
+  const user = toPlain(input);
+  return {
+    id: user.id,
+    _id: user.id,
+    name: user.name,
+    email: user.email || "",
+    phone: user.phone || "",
+    gender: user.gender || "",
+    location: user.location || "",
+    verified: !!user.verified,
+    verified_photo: !!user.verified_photo,
+    reverification_required: !!user.reverification_required,
+    premium: !!user.premium,
+    incognito_mode: !!user.premium && !!user.incognito_mode,
+    suspended: !!user.suspended,
+    role: user.role || "user",
+    photos: user.photos || [],
+    created_at: user.created_at,
+    last_active_at: user.last_active_at
+  };
+};
 
 router.get("/me", async (req, res) => {
   return res.json({
     id: req.user.id,
+    _id: req.user.id,
     name: req.user.name,
     email: req.user.email,
     role: req.user.role
@@ -71,44 +79,31 @@ router.get("/overview", async (req, res) => {
     premiumUsers,
     suspendedUsers,
     pendingReports,
-    verificationCounts,
+    pendingVerifications,
+    approvedVerifications,
+    rejectedVerifications,
     matchesTotal,
     messagesTotal,
-    activeUsers
+    activeUsers,
+    recentUsersRows,
+    recentReportsRows
   ] = await Promise.all([
-    models.User.countDocuments(userRoleFilter),
-    models.User.countDocuments({ ...userRoleFilter, verified: true }),
-    models.User.countDocuments({ ...userRoleFilter, premium: true }),
-    models.User.countDocuments({ ...userRoleFilter, suspended: true }),
-    models.Report.countDocuments({ status: "pending" }),
-    models.PhotoVerification.aggregate([
-      { $group: { _id: "$status", total: { $sum: 1 } } }
-    ]),
-    models.Match.countDocuments({}),
-    models.Message.countDocuments({}),
-    models.User.countDocuments({ ...userRoleFilter, last_active_at: { $gte: sevenDaysAgo } })
+    models.User.count({ where: userRoleWhere }),
+    models.User.count({ where: andWhere(userRoleWhere, { verified: true }) }),
+    models.User.count({ where: andWhere(userRoleWhere, { premium: true }) }),
+    models.User.count({ where: andWhere(userRoleWhere, { suspended: true }) }),
+    models.Report.count({ where: { status: "pending" } }),
+    models.PhotoVerification.count({ where: { status: "pending" } }),
+    models.PhotoVerification.count({ where: { status: "approved" } }),
+    models.PhotoVerification.count({ where: { status: "rejected" } }),
+    models.Match.count(),
+    models.Message.count(),
+    models.User.count({ where: andWhere(userRoleWhere, { last_active_at: { [Op.gte]: sevenDaysAgo } }) }),
+    models.User.findAll({ where: userRoleWhere, order: [["created_at", "DESC"]], limit: 6 }),
+    models.Report.findAll({ order: [["created_at", "DESC"]], limit: 6 })
   ]);
 
-  const verificationMetrics = verificationCounts.reduce((acc, row) => {
-    const key = String(row?._id || "").trim().toLowerCase();
-    if (!key) return acc;
-    acc[key] = row.total || 0;
-    return acc;
-  }, {});
-  const pendingVerifications = verificationMetrics.pending || 0;
-  const approvedVerifications = verificationMetrics.approved || 0;
-  const rejectedVerifications = verificationMetrics.rejected || 0;
   const totalVerifications = pendingVerifications + approvedVerifications + rejectedVerifications;
-
-  const recentUsers = await models.User.find(userRoleFilter)
-    .sort({ created_at: -1 })
-    .limit(6)
-    .lean();
-
-  const recentReports = await models.Report.find({})
-    .sort({ created_at: -1 })
-    .limit(6)
-    .lean();
 
   return res.json({
     metrics: {
@@ -125,8 +120,8 @@ router.get("/overview", async (req, res) => {
       messages_total: messagesTotal,
       active_users_7d: activeUsers
     },
-    recent_users: recentUsers.map(pickSafeUser),
-    recent_reports: recentReports
+    recent_users: recentUsersRows.map(pickSafeUser),
+    recent_reports: recentReportsRows.map(toPlain)
   });
 });
 
@@ -138,7 +133,7 @@ router.get("/users", async (req, res) => {
   const clauses = [];
   if (role !== "all") {
     if (role === "user") {
-      clauses.push(userRoleFilter);
+      clauses.push(userRoleWhere);
     } else {
       clauses.push({ role });
     }
@@ -149,42 +144,63 @@ router.get("/users", async (req, res) => {
   if (status === "unverified") clauses.push({ verified: false });
   if (search) {
     clauses.push({
-      $or: [
-      { name: { $regex: search, $options: "i" } },
-      { email: { $regex: search, $options: "i" } },
-      { phone: { $regex: search, $options: "i" } },
-      { location: { $regex: search, $options: "i" } }
+      [Op.or]: [
+        { name: { [Op.like]: `%${search}%` } },
+        { email: { [Op.like]: `%${search}%` } },
+        { phone: { [Op.like]: `%${search}%` } },
+        { location: { [Op.like]: `%${search}%` } }
       ]
     });
   }
 
-  const query = clauses.length > 0 ? { $and: clauses } : {};
+  const where = andWhere(...clauses);
 
-  const users = await models.User.find(query)
-    .sort({ created_at: -1 })
-    .limit(100)
-    .lean();
+  const usersRows = await models.User.findAll({
+    where,
+    order: [["created_at", "DESC"]],
+    limit: 100
+  });
 
-  const userIds = users.map((item) => item._id);
+  const users = usersRows.map(toPlain);
+  const userIds = users.map((item) => item.id);
 
-  const [reportCounts, verificationRows] = await Promise.all([
-    models.Report.aggregate([
-      { $match: { reported_id: { $in: userIds } } },
-      { $group: { _id: "$reported_id", total: { $sum: 1 }, pending: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] } } } }
-    ]),
-    models.PhotoVerification.aggregate([
-      { $match: { user_id: { $in: userIds } } },
-      { $sort: { submitted_at: -1 } },
-      { $group: { _id: "$user_id", status: { $first: "$status" }, submitted_at: { $first: "$submitted_at" } } }
-    ])
+  const [reportRows, verificationRowsRaw] = await Promise.all([
+    userIds.length === 0
+      ? []
+      : models.Report.findAll({
+        where: { reported_id: { [Op.in]: userIds } },
+        attributes: ["reported_id", "status"]
+      }),
+    userIds.length === 0
+      ? []
+      : models.PhotoVerification.findAll({
+        where: { user_id: { [Op.in]: userIds } },
+        order: [["submitted_at", "DESC"]]
+      })
   ]);
 
-  const reportMap = new Map(reportCounts.map((row) => [String(row._id), row]));
-  const verificationMap = new Map(verificationRows.map((row) => [String(row._id), row]));
+  const reportMap = new Map();
+  for (const rowRecord of reportRows) {
+    const row = toPlain(rowRecord);
+    const key = String(row.reported_id);
+    const current = reportMap.get(key) || { total: 0, pending: 0 };
+    current.total += 1;
+    if (row.status === "pending") current.pending += 1;
+    reportMap.set(key, current);
+  }
+
+  const verificationMap = new Map();
+  for (const rowRecord of verificationRowsRaw) {
+    const row = toPlain(rowRecord);
+    const key = String(row.user_id);
+    if (!verificationMap.has(key)) {
+      verificationMap.set(key, row);
+    }
+  }
 
   return res.json(users.map((user) => {
-    const reportInfo = reportMap.get(String(user._id));
-    const verificationInfo = verificationMap.get(String(user._id));
+    const reportInfo = reportMap.get(String(user.id));
+    const verificationInfo = verificationMap.get(String(user.id));
     return {
       ...pickSafeUser(user),
       reports_total: reportInfo?.total || 0,
@@ -197,11 +213,11 @@ router.get("/users", async (req, res) => {
 
 router.patch("/users/:id", async (req, res) => {
   const userId = req.params.id;
-  const user = await models.User.findById(userId);
+  const user = await models.User.findByPk(userId);
   if (!user) return res.status(404).json({ error: "User not found" });
 
   const { suspended, premium, verified, verified_photo, role } = req.body || {};
-  if (String(user._id) === String(req.user.id) && (suspended === true || role === "user")) {
+  if (String(user.id) === String(req.user.id) && (suspended === true || role === "user")) {
     return res.status(400).json({ error: "You cannot revoke your own admin access" });
   }
 
@@ -222,8 +238,10 @@ router.patch("/users/:id", async (req, res) => {
 
   await user.save();
   if (typeof verified_photo === "boolean") {
-    const latestVerification = await models.PhotoVerification.findOne({ user_id: user._id })
-      .sort({ submitted_at: -1 });
+    const latestVerification = await models.PhotoVerification.findOne({
+      where: { user_id: user.id },
+      order: [["submitted_at", "DESC"]]
+    });
     if (latestVerification) {
       latestVerification.status = verified_photo ? "approved" : "rejected";
       latestVerification.reviewed_at = new Date();
@@ -239,58 +257,69 @@ router.patch("/users/:id", async (req, res) => {
       await latestVerification.save();
     }
     if (!verified_photo) {
-      await models.PhotoVerification.updateMany(
-        { user_id: user._id, status: "approved" },
+      await models.PhotoVerification.update(
         {
-          $set: {
-            status: "rejected",
-            reviewed_at: new Date(),
-            reviewed_by: req.user.id,
-            note: "Badge photo retire depuis la gestion utilisateurs"
+          status: "rejected",
+          reviewed_at: new Date(),
+          reviewed_by: req.user.id,
+          note: "Badge photo retire depuis la gestion utilisateurs"
+        },
+        {
+          where: {
+            user_id: user.id,
+            status: "approved"
           }
         }
       );
     }
   }
   if (shouldActivatePendingLikes) {
-    await activatePendingLikesForUser(user._id, req.app);
+    await activatePendingLikesForUser(user.id, req.app);
   }
-  return res.json({ message: "User updated", user: pickSafeUser(user.toObject()) });
+  return res.json({ message: "User updated", user: pickSafeUser(user) });
 });
 
 router.get("/users/:id/conversations", async (req, res) => {
   const userId = req.params.id;
-  const user = await models.User.findById(userId).lean();
+  const user = await models.User.findByPk(userId);
   if (!user) return res.status(404).json({ error: "User not found" });
 
-  const matches = await models.Match.find({
-    $or: [{ user1_id: userId }, { user2_id: userId }]
-  })
-    .sort({ created_at: -1 })
-    .lean();
+  const matchesRows = await models.Match.findAll({
+    where: {
+      [Op.or]: [{ user1_id: userId }, { user2_id: userId }]
+    },
+    order: [["created_at", "DESC"]]
+  });
+  const matches = matchesRows.map(toPlain);
 
   const allUserIds = [...new Set(matches.flatMap((match) => [
     String(match.user1_id),
     String(match.user2_id)
-  ]))]
-    .map(toObjectId)
-    .filter(Boolean);
+  ]))];
 
-  const users = await models.User.find({ _id: { $in: allUserIds } })
-    .select("name email phone location photos")
-    .lean();
-  const userMap = new Map(users.map((item) => [String(item._id), pickSafeUser(item)]));
+  const usersRows = allUserIds.length === 0
+    ? []
+    : await models.User.findAll({
+      where: { id: { [Op.in]: allUserIds } },
+      attributes: ["id", "name", "email", "phone", "location", "photos", "verified", "verified_photo", "premium", "incognito_mode", "suspended", "role", "reverification_required", "created_at", "last_active_at"]
+    });
+  const userMap = new Map(usersRows.map((item) => [String(item.id), pickSafeUser(item)]));
 
-  const matchIds = matches.map((match) => match._id);
-  const messages = await models.Message.find({ match_id: { $in: matchIds } })
-    .sort({ created_at: 1 })
-    .lean();
+  const matchIds = matches.map((match) => match.id);
+  const messagesRows = matchIds.length === 0
+    ? []
+    : await models.Message.findAll({
+      where: { match_id: { [Op.in]: matchIds } },
+      order: [["created_at", "ASC"]]
+    });
+  const messages = messagesRows.map(toPlain);
   const messagesByMatch = new Map();
   for (const message of messages) {
     const key = String(message.match_id);
     const bucket = messagesByMatch.get(key) || [];
     bucket.push({
-      id: message._id,
+      id: message.id,
+      _id: message.id,
       match_id: String(message.match_id),
       from_user_id: String(message.from_user_id),
       to_user_id: String(message.to_user_id),
@@ -309,10 +338,11 @@ router.get("/users/:id/conversations", async (req, res) => {
     const otherUserId = String(match.user1_id) === String(userId)
       ? String(match.user2_id)
       : String(match.user1_id);
-    const conversationMessages = messagesByMatch.get(String(match._id)) || [];
+    const conversationMessages = messagesByMatch.get(String(match.id)) || [];
     const lastMessage = conversationMessages[conversationMessages.length - 1] || null;
     return {
-      id: match._id,
+      id: match.id,
+      _id: match.id,
       created_at: match.created_at,
       other_user: userMap.get(otherUserId) || null,
       messages_count: conversationMessages.length,
@@ -332,7 +362,7 @@ router.delete("/users/:id/photos", async (req, res) => {
   const photo = req.body?.photo;
   if (!photo) return res.status(400).json({ error: "Missing photo" });
 
-  const user = await models.User.findById(userId);
+  const user = await models.User.findByPk(userId);
   if (!user) return res.status(404).json({ error: "User not found" });
 
   const photos = user.photos || [];
@@ -347,33 +377,37 @@ router.delete("/users/:id/photos", async (req, res) => {
 
   return res.json({
     message: "Photo deleted",
-    user: pickSafeUser(user.toObject())
+    user: pickSafeUser(user)
   });
 });
 
 router.get("/reports", async (req, res) => {
   const status = String(req.query?.status || "all").trim().toLowerCase();
-  const query = {};
-  if (status !== "all") query.status = status;
+  const where = {};
+  if (status !== "all") where.status = status;
 
-  const reports = await models.Report.find(query)
-    .sort({ created_at: -1 })
-    .limit(100)
-    .lean();
+  const reportsRows = await models.Report.findAll({
+    where,
+    order: [["created_at", "DESC"]],
+    limit: 100
+  });
+  const reports = reportsRows.map(toPlain);
 
   const userIds = [...new Set(
     reports.flatMap((report) => [String(report.reporter_id), String(report.reported_id)])
-  )]
-    .map(toObjectId)
-    .filter(Boolean);
+  )];
 
-  const users = await models.User.find({ _id: { $in: userIds } })
-    .select("name email phone photos suspended")
-    .lean();
-  const userMap = new Map(users.map((user) => [String(user._id), user]));
+  const usersRows = userIds.length === 0
+    ? []
+    : await models.User.findAll({
+      where: { id: { [Op.in]: userIds } },
+      attributes: ["id", "name", "email", "phone", "photos", "suspended"]
+    });
+  const userMap = new Map(usersRows.map((user) => [String(user.id), toPlain(user)]));
 
   return res.json(reports.map((report) => ({
-    id: report._id,
+    id: report.id,
+    _id: report.id,
     reason: report.reason,
     status: report.status || "pending",
     note: report.note || "",
@@ -385,7 +419,7 @@ router.get("/reports", async (req, res) => {
 });
 
 router.post("/reports/:id/review", async (req, res) => {
-  const report = await models.Report.findById(req.params.id);
+  const report = await models.Report.findByPk(req.params.id);
   if (!report) return res.status(404).json({ error: "Report not found" });
 
   report.status = "reviewed";
@@ -399,44 +433,62 @@ router.post("/reports/:id/review", async (req, res) => {
 
 router.get("/verifications", async (req, res) => {
   const status = String(req.query?.status || "pending").trim().toLowerCase();
-  const query = {};
-  if (status !== "all") query.status = status;
+  const where = {};
+  if (status !== "all") where.status = status;
 
-  const rows = await models.PhotoVerification.find(query)
-    .sort({ submitted_at: -1 })
-    .limit(100)
-    .lean();
+  const rowsRecords = await models.PhotoVerification.findAll({
+    where,
+    order: [["submitted_at", "DESC"]],
+    limit: 100
+  });
+  const rows = rowsRecords.map(toPlain);
 
-  const verificationUserIds = rows.map((row) => row.user_id);
-  const legacyQuery = {
-    ...userRoleFilter,
-    verified_photo: true,
-    photos: { $exists: true, $ne: [] }
-  };
-  const legacyUsers = status === "pending"
+  const legacyUserRecords = status === "pending"
     ? []
-    : await models.User.find(legacyQuery)
-      .sort({ created_at: -1 })
-      .limit(100)
-      .lean();
+    : await models.User.findAll({
+      where: andWhere(userRoleWhere, { verified_photo: true }),
+      order: [["created_at", "DESC"]],
+      limit: 100
+    });
+  const legacyUsers = legacyUserRecords
+    .map(toPlain)
+    .filter((user) => Array.isArray(user.photos) && user.photos.length > 0);
 
   const userIds = [...new Set([
-    ...verificationUserIds.map((id) => String(id)),
-    ...legacyUsers.map((user) => String(user._id))
-  ])]
-    .map(toObjectId)
-    .filter(Boolean);
+    ...rows.map((row) => String(row.user_id)),
+    ...legacyUsers.map((user) => String(user.id))
+  ])];
 
-  const users = await models.User.find({ _id: { $in: userIds } })
-    .select("name email phone location photos verified_photo suspended created_at last_active_at")
-    .lean();
-  const userMap = new Map(users.map((user) => [String(user._id), pickSafeUser(user)]));
+  const usersRows = userIds.length === 0
+    ? []
+    : await models.User.findAll({
+      where: { id: { [Op.in]: userIds } },
+      attributes: [
+        "id",
+        "name",
+        "email",
+        "phone",
+        "location",
+        "photos",
+        "verified",
+        "verified_photo",
+        "premium",
+        "incognito_mode",
+        "suspended",
+        "role",
+        "reverification_required",
+        "created_at",
+        "last_active_at"
+      ]
+    });
+  const userMap = new Map(usersRows.map((user) => [String(user.id), pickSafeUser(user)]));
 
   const verificationRows = rows.map((row) => {
     const user = userMap.get(String(row.user_id)) || null;
     const fallbackPhoto = user?.photos?.length ? user.photos[user.photos.length - 1] : null;
     return {
-      id: row._id,
+      id: row.id,
+      _id: row.id,
       source: "request",
       status: row.status,
       photo_url: row.photo_url || fallbackPhoto || null,
@@ -449,11 +501,12 @@ router.get("/verifications", async (req, res) => {
 
   const existingUserIds = new Set(verificationRows.map((row) => String(row.user?.id || "")));
   const legacyRows = legacyUsers
-    .map((user) => userMap.get(String(user._id)))
+    .map((user) => userMap.get(String(user.id)))
     .filter(Boolean)
     .filter((user) => !existingUserIds.has(String(user.id)))
     .map((user) => ({
       id: `legacy:${user.id}`,
+      _id: `legacy:${user.id}`,
       source: "legacy",
       status: "approved",
       photo_url: user.photos?.length ? user.photos[user.photos.length - 1] : null,
@@ -467,7 +520,7 @@ router.get("/verifications", async (req, res) => {
 });
 
 router.post("/verifications/:id/decision", async (req, res) => {
-  const row = await models.PhotoVerification.findById(req.params.id);
+  const row = await models.PhotoVerification.findByPk(req.params.id);
   if (!row) return res.status(404).json({ error: "Verification not found" });
 
   const action = String(req.body?.action || "").trim().toLowerCase();
@@ -481,19 +534,19 @@ router.post("/verifications/:id/decision", async (req, res) => {
   row.reviewed_at = new Date();
   row.reviewed_by = req.user.id;
   if (!row.photo_url) {
-    const user = await models.User.findById(row.user_id).select("photos").lean();
+    const user = await models.User.findByPk(row.user_id, { attributes: ["id", "photos"] });
     if (user?.photos?.length) {
       row.photo_url = user.photos[user.photos.length - 1];
     }
   }
   await row.save();
 
-  await models.User.updateOne(
-    { _id: row.user_id },
+  await models.User.update(
     {
       verified_photo: action === "approve",
       reverification_required: false
-    }
+    },
+    { where: { id: row.user_id } }
   );
 
   if (action === "approve") {

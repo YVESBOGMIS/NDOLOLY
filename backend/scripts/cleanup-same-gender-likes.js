@@ -1,39 +1,29 @@
-﻿require("dotenv").config();
-const mongoose = require("mongoose");
-
-const uri = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/loveconnect";
-
-const likeSchema = new mongoose.Schema({
-  from_user_id: mongoose.Schema.Types.ObjectId,
-  to_user_id: mongoose.Schema.Types.ObjectId,
-  status: String
-}, { collection: "likes" });
-
-const userSchema = new mongoose.Schema({
-  gender: String
-}, { collection: "users" });
-
-const Like = mongoose.model("LikeCleanup", likeSchema);
-const User = mongoose.model("UserCleanup", userSchema);
+require("dotenv").config();
+const { connectDB, models } = require("../src/db");
 
 const run = async () => {
-  await mongoose.connect(uri);
+  await connectDB();
 
-  const likes = await Like.find({}).lean();
+  const likes = await models.Like.findAll({
+    attributes: ["id", "from_user_id", "to_user_id"]
+  });
   let removed = 0;
 
   for (const like of likes) {
-    const from = await User.findById(like.from_user_id).lean();
-    const to = await User.findById(like.to_user_id).lean();
+    const [from, to] = await Promise.all([
+      models.User.findByPk(like.from_user_id, { attributes: ["id", "gender"] }),
+      models.User.findByPk(like.to_user_id, { attributes: ["id", "gender"] })
+    ]);
+
     if (!from || !to) continue;
     if (from.gender && to.gender && from.gender === to.gender) {
-      await Like.deleteOne({ _id: like._id });
+      await like.destroy();
       removed += 1;
     }
   }
 
   console.log(`Removed ${removed} same-gender likes`);
-  await mongoose.disconnect();
+  process.exit(0);
 };
 
 run().catch((err) => {

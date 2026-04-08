@@ -14,8 +14,10 @@ services:
         generateValue: true
       - key: PORT
         value: 10000
-      - key: MONGODB_URI
+      - key: DATABASE_URL
         sync: false
+      - key: DB_SSL
+        value: "true"
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT

@@ -1,8 +1,8 @@
-﻿﻿const express = require("express");
+const express = require("express");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs/promises");
-const { models } = require("../db");
+const { models, Op } = require("../db");
 const { auth } = require("../middleware/auth");
 
 const router = express.Router();
@@ -208,25 +208,32 @@ const normalizeReligion = (value) => {
 };
 
 const serializeVerification = (row) => {
-  if (!row) return null;
+  const raw = row?.toJSON ? row.toJSON() : row;
+  if (!raw) return null;
   return {
-    id: row._id,
-    status: row.status,
-    note: row.note || "",
-    photo_url: row.photo_url || null,
-    submitted_at: row.submitted_at,
-    reviewed_at: row.reviewed_at
+    id: raw.id,
+    _id: raw.id,
+    status: raw.status,
+    note: raw.note || "",
+    photo_url: raw.photo_url || null,
+    submitted_at: raw.submitted_at,
+    reviewed_at: raw.reviewed_at
   };
 };
 
+const toPlainList = (rows) => rows.map((row) => (row?.toJSON ? row.toJSON() : row));
+
 router.get("/me", auth, async (req, res) => {
   const [user, verification] = await Promise.all([
-    models.User.findById(req.user.id).lean(),
-    models.PhotoVerification.findOne({ user_id: req.user.id }).sort({ submitted_at: -1 }).lean()
+    models.User.findByPk(req.user.id),
+    models.PhotoVerification.findOne({
+      where: { user_id: req.user.id },
+      order: [["submitted_at", "DESC"]]
+    })
   ]);
   if (!user) return res.status(404).json({ error: "User not found" });
 
-  const payload = { ...user };
+  const payload = user.toJSON();
   delete payload.password_hash;
   payload.incognito_mode = !!user.premium && !!user.incognito_mode;
   payload.photo_verification = serializeVerification(verification);
@@ -234,16 +241,17 @@ router.get("/me", auth, async (req, res) => {
 });
 
 router.get("/verification-status", auth, async (req, res) => {
-  const user = await models.User.findById(req.user.id)
-    .select("verified_photo")
-    .lean();
+  const user = await models.User.findByPk(req.user.id, {
+    attributes: ["id", "verified_photo"]
+  });
   if (!user) {
     return res.status(404).json({ error: "User not found" });
   }
 
-  const verification = await models.PhotoVerification.findOne({ user_id: req.user.id })
-    .sort({ submitted_at: -1 })
-    .lean();
+  const verification = await models.PhotoVerification.findOne({
+    where: { user_id: req.user.id },
+    order: [["submitted_at", "DESC"]]
+  });
 
   const serialized = serializeVerification(verification);
   if (user.verified_photo) {
@@ -302,7 +310,7 @@ router.post("/location", auth, async (req, res) => {
     return res.status(400).json({ error: "Invalid longitude" });
   }
 
-  const user = await models.User.findById(req.user.id);
+  const user = await models.User.findByPk(req.user.id);
   if (!user) return res.status(404).json({ error: "User not found" });
 
   let city = null;
@@ -350,7 +358,7 @@ router.put("/me", auth, async (req, res) => {
     "incognito_mode"
   ];
 
-  const user = await models.User.findById(req.user.id);
+  const user = await models.User.findByPk(req.user.id);
   if (!user) return res.status(404).json({ error: "User not found" });
 
   let changed = false;
@@ -412,14 +420,14 @@ router.put("/me", auth, async (req, res) => {
 });
 
 router.delete("/me", auth, async (req, res) => {
-  await models.User.deleteOne({ _id: req.user.id });
+  await models.User.destroy({ where: { id: req.user.id } });
   return res.json({ message: "Account deleted" });
 });
 
 router.post("/photo", auth, upload.single("photo"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file" });
 
-  const user = await models.User.findById(req.user.id);
+  const user = await models.User.findByPk(req.user.id);
   if (!user) return res.status(404).json({ error: "User not found" });
 
   if ((user.photos || []).length >= 6) {
@@ -438,7 +446,7 @@ router.put("/photo", auth, upload.single("photo"), async (req, res) => {
   const oldPhoto = req.body?.oldPhoto || req.body?.old_photo;
   if (!oldPhoto) return res.status(400).json({ error: "Missing old photo" });
 
-  const user = await models.User.findById(req.user.id);
+  const user = await models.User.findByPk(req.user.id);
   if (!user) return res.status(404).json({ error: "User not found" });
 
   const photos = user.photos || [];
@@ -458,7 +466,7 @@ router.delete("/photo", auth, async (req, res) => {
   const photo = req.body?.photo;
   if (!photo) return res.status(400).json({ error: "Missing photo" });
 
-  const user = await models.User.findById(req.user.id);
+  const user = await models.User.findByPk(req.user.id);
   if (!user) return res.status(404).json({ error: "User not found" });
 
   const photos = user.photos || [];
@@ -466,7 +474,7 @@ router.delete("/photo", auth, async (req, res) => {
     return res.status(404).json({ error: "Photo not found" });
   }
 
-  user.photos = photos.filter((p) => p !== photo);
+  user.photos = photos.filter((item) => item !== photo);
   await user.save();
 
   await safeRemoveUpload(photo);
@@ -478,10 +486,13 @@ router.post("/verify-request", auth, upload.single("photo"), async (req, res) =>
     return res.status(400).json({ error: "Verification photo required" });
   }
 
-  const user = await models.User.findById(req.user.id);
+  const user = await models.User.findByPk(req.user.id);
   if (!user) return res.status(404).json({ error: "User not found" });
 
-  const existing = await models.PhotoVerification.findOne({ user_id: req.user.id }).sort({ submitted_at: -1 });
+  const existing = await models.PhotoVerification.findOne({
+    where: { user_id: req.user.id },
+    order: [["submitted_at", "DESC"]]
+  });
   if (existing && existing.status === "pending") {
     return res.status(409).json({ error: "Verification already pending" });
   }
@@ -499,33 +510,41 @@ router.post("/verify-request", auth, upload.single("photo"), async (req, res) =>
 
   return res.json({
     message: "Verification soumise a l'admin",
-    verification: serializeVerification(verification.toObject())
+    verification: serializeVerification(verification)
   });
 });
 
 router.post("/complete-onboarding", auth, async (req, res) => {
-  await models.User.updateOne({ _id: req.user.id }, { onboarding_completed: true });
+  await models.User.update(
+    { onboarding_completed: true },
+    { where: { id: req.user.id } }
+  );
   return res.json({ message: "Onboarding completed" });
 });
 
 router.get("/discover", auth, async (req, res) => {
-  const me = await models.User.findById(req.user.id).lean();
-  if (!me) return res.status(404).json({ error: "User not found" });
+  const meRecord = await models.User.findByPk(req.user.id);
+  if (!meRecord) return res.status(404).json({ error: "User not found" });
+  const me = meRecord.toJSON();
 
-  const blockedIds = await models.Block.find({ blocker_id: req.user.id }).select("blocked_id").lean();
-  const blockedByIds = await models.Block.find({ blocked_id: req.user.id }).select("blocker_id").lean();
-  const likedIds = await models.Like.find({ from_user_id: req.user.id }).select("to_user_id").lean();
+  const [blockedIdsRows, blockedByIdsRows, likedIdsRows, usersRows] = await Promise.all([
+    models.Block.findAll({ where: { blocker_id: req.user.id }, attributes: ["blocked_id"] }),
+    models.Block.findAll({ where: { blocked_id: req.user.id }, attributes: ["blocker_id"] }),
+    models.Like.findAll({ where: { from_user_id: req.user.id }, attributes: ["to_user_id"] }),
+    models.User.findAll({
+      where: {
+        id: { [Op.ne]: req.user.id },
+        verified: true,
+        verified_photo: true,
+        suspended: { [Op.ne]: true }
+      }
+    })
+  ]);
 
-  const blockedSet = new Set(blockedIds.map((b) => String(b.blocked_id)));
-  const blockedBySet = new Set(blockedByIds.map((b) => String(b.blocker_id)));
-  const likedSet = new Set(likedIds.map((l) => String(l.to_user_id)));
-
-  const users = await models.User.find({
-    _id: { $ne: req.user.id },
-    verified: true,
-    verified_photo: true,
-    suspended: { $ne: true }
-  }).lean();
+  const blockedSet = new Set(blockedIdsRows.map((row) => String(row.blocked_id)));
+  const blockedBySet = new Set(blockedByIdsRows.map((row) => String(row.blocker_id)));
+  const likedSet = new Set(likedIdsRows.map((row) => String(row.to_user_id)));
+  const users = toPlainList(usersRows);
   const meInterests = me.interests || [];
 
   const filterAgeMin = Number.isFinite(Number(req.query?.age_min)) ? Number(req.query.age_min) : null;
@@ -584,8 +603,8 @@ router.get("/discover", auth, async (req, res) => {
 
   const baseCandidates = users.filter((user) => {
     if (me.gender && user.gender && me.gender === user.gender) return false;
-    if (blockedSet.has(String(user._id))) return false;
-    if (blockedBySet.has(String(user._id))) return false;
+    if (blockedSet.has(String(user.id))) return false;
+    if (blockedBySet.has(String(user.id))) return false;
 
     const age = computeAge(user.birthdate);
     if (age === null) return false;
@@ -607,32 +626,32 @@ router.get("/discover", auth, async (req, res) => {
 
       if (ignoreInterests || meInterests.length === 0) return true;
       const theirInterests = user.interests || [];
-      const sharedInterests = theirInterests.filter((i) => meInterests.includes(i));
+      const sharedInterests = theirInterests.filter((item) => meInterests.includes(item));
       return sharedInterests.length > 0;
     });
   };
 
-  let results = applyPreferences(baseCandidates).filter((user) => !likedSet.has(String(user._id)));
+  let results = applyPreferences(baseCandidates).filter((user) => !likedSet.has(String(user.id)));
 
   if (results.length === 0) {
     results = applyPreferences(baseCandidates, { ignoreInterests: true })
-      .filter((user) => !likedSet.has(String(user._id)));
+      .filter((user) => !likedSet.has(String(user.id)));
   }
 
   if (results.length === 0) {
     results = applyPreferences(baseCandidates, { ignoreInterests: true, ignoreAge: true })
-      .filter((user) => !likedSet.has(String(user._id)));
+      .filter((user) => !likedSet.has(String(user.id)));
   }
 
   if (results.length === 0) {
-    // Re-propose when the feed is empty
     results = applyPreferences(baseCandidates, { ignoreInterests: true, ignoreAge: true });
   }
 
   const now = new Date();
   const payload = results
     .map((user) => ({
-      id: user._id,
+      id: user.id,
+      _id: user.id,
       name: user.name,
       age: computeAge(user.birthdate),
       gender: user.gender,
@@ -661,13 +680,16 @@ router.get("/user/:id", auth, async (req, res) => {
   const targetId = req.params.id;
   if (!targetId) return res.status(400).json({ error: "User id required" });
 
-  const viewer = await models.User.findById(req.user.id).lean();
-  if (!viewer) return res.status(404).json({ error: "User not found" });
+  const viewerRecord = await models.User.findByPk(req.user.id);
+  if (!viewerRecord) return res.status(404).json({ error: "User not found" });
 
-  const target = await models.User.findById(targetId).lean();
-  if (!target) return res.status(404).json({ error: "User not found" });
+  const targetRecord = await models.User.findByPk(targetId);
+  if (!targetRecord) return res.status(404).json({ error: "User not found" });
 
-  if (String(target._id) !== String(req.user.id) && (!target.verified || !target.verified_photo || target.suspended)) {
+  const viewer = viewerRecord.toJSON();
+  const target = targetRecord.toJSON();
+
+  if (String(target.id) !== String(req.user.id) && (!target.verified || !target.verified_photo || target.suspended)) {
     return res.status(404).json({ error: "User not found" });
   }
 
@@ -675,26 +697,32 @@ router.get("/user/:id", auth, async (req, res) => {
   const age = computeAge(target.birthdate);
   const distance = buildDistance(viewer, target, 50);
 
-  if (String(target._id) !== String(req.user.id)) {
+  if (String(target.id) !== String(req.user.id)) {
     const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const existing = await models.ProfileView.findOne({
-      viewer_id: req.user.id,
-      viewed_user_id: target._id,
-      viewed_at: { $gte: since }
-    }).lean();
+      where: {
+        viewer_id: req.user.id,
+        viewed_user_id: target.id,
+        viewed_at: { [Op.gte]: since }
+      }
+    });
 
     if (!existing && !(viewer.premium && viewer.incognito_mode)) {
       await models.ProfileView.create({
         viewer_id: req.user.id,
-        viewed_user_id: target._id,
+        viewed_user_id: target.id,
         viewed_at: now
       });
-      await models.User.updateOne({ _id: target._id }, { $inc: { views_count: 1 } });
+      await models.User.increment("views_count", {
+        by: 1,
+        where: { id: target.id }
+      });
     }
   }
 
   return res.json({
-    id: target._id,
+    id: target.id,
+    _id: target.id,
     name: target.name,
     birthdate: target.birthdate,
     age,
@@ -718,23 +746,29 @@ router.get("/user/:id", auth, async (req, res) => {
 });
 
 router.get("/views", auth, async (req, res) => {
-  const views = await models.ProfileView.find({ viewed_user_id: req.user.id })
-    .sort({ viewed_at: -1 })
-    .limit(200)
-    .lean();
+  const viewsRows = await models.ProfileView.findAll({
+    where: { viewed_user_id: req.user.id },
+    order: [["viewed_at", "DESC"]],
+    limit: 200
+  });
+  const views = toPlainList(viewsRows);
 
   const viewerIds = [...new Set(views.map((row) => String(row.viewer_id)))];
-  const viewers = await models.User.find({ _id: { $in: viewerIds } })
-    .select("name location photos verified_photo")
-    .lean();
-  const viewerMap = new Map(viewers.map((user) => [String(user._id), user]));
+  const viewersRows = viewerIds.length === 0
+    ? []
+    : await models.User.findAll({
+      where: { id: { [Op.in]: viewerIds } },
+      attributes: ["id", "name", "location", "photos", "verified_photo"]
+    });
+  const viewerMap = new Map(toPlainList(viewersRows).map((user) => [String(user.id), user]));
 
   const payload = views
     .map((row) => {
       const viewer = viewerMap.get(String(row.viewer_id));
       if (!viewer) return null;
       return {
-        id: viewer._id,
+        id: viewer.id,
+        _id: viewer.id,
         name: viewer.name,
         location: viewer.location,
         photos: viewer.photos || [],
@@ -748,8 +782,9 @@ router.get("/views", auth, async (req, res) => {
 });
 
 router.get("/nearby", auth, async (req, res) => {
-  const me = await models.User.findById(req.user.id).lean();
-  if (!me) return res.status(404).json({ error: "User not found" });
+  const meRecord = await models.User.findByPk(req.user.id);
+  if (!meRecord) return res.status(404).json({ error: "User not found" });
+  const me = meRecord.toJSON();
 
   if (!Number.isFinite(me.location_lat) || !Number.isFinite(me.location_lng)) {
     return res.status(400).json({ error: "Location not set" });
@@ -759,17 +794,30 @@ router.get("/nearby", auth, async (req, res) => {
     return res.status(400).json({ error: "City not set" });
   }
 
-  const users = await models.User.find({
-    _id: { $ne: req.user.id },
-    verified: true,
-    verified_photo: true,
-    suspended: { $ne: true }
-  }).lean();
-  const likedIds = await models.Like.find({ from_user_id: req.user.id }).select("to_user_id").lean();
-  const likedSet = new Set(likedIds.map((l) => String(l.to_user_id)));
-  const matchRows = await models.Match.find({
-    $or: [{ user1_id: req.user.id }, { user2_id: req.user.id }]
-  }).select("user1_id user2_id").lean();
+  const [usersRows, likedRows, matchRowsRecords] = await Promise.all([
+    models.User.findAll({
+      where: {
+        id: { [Op.ne]: req.user.id },
+        verified: true,
+        verified_photo: true,
+        suspended: { [Op.ne]: true }
+      }
+    }),
+    models.Like.findAll({
+      where: { from_user_id: req.user.id },
+      attributes: ["to_user_id"]
+    }),
+    models.Match.findAll({
+      where: {
+        [Op.or]: [{ user1_id: req.user.id }, { user2_id: req.user.id }]
+      },
+      attributes: ["user1_id", "user2_id"]
+    })
+  ]);
+
+  const users = toPlainList(usersRows);
+  const likedSet = new Set(likedRows.map((row) => String(row.to_user_id)));
+  const matchRows = toPlainList(matchRowsRecords);
   const matchSet = new Set(
     matchRows.map((row) =>
       String(row.user1_id) === String(req.user.id) ? String(row.user2_id) : String(row.user1_id)
@@ -781,7 +829,7 @@ router.get("/nearby", auth, async (req, res) => {
       if (me.gender && user.gender && me.gender === user.gender) {
         return null;
       }
-      if (matchSet.has(String(user._id))) return null;
+      if (matchSet.has(String(user.id))) return null;
       const userCity = normalizeCity(user.location_city || user.location);
       if (!userCity || userCity !== meCity) return null;
       if (!Number.isFinite(user.location_lat) || !Number.isFinite(user.location_lng)) return null;
@@ -792,7 +840,8 @@ router.get("/nearby", auth, async (req, res) => {
         user.location_lng
       ));
       return {
-        id: user._id,
+        id: user.id,
+        _id: user.id,
         name: user.name,
         age: computeAge(user.birthdate),
         gender: user.gender,

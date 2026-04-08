@@ -1,7 +1,7 @@
-﻿﻿const express = require("express");
+const express = require("express");
 const multer = require("multer");
 const path = require("path");
-const { models } = require("../db");
+const { models, Op } = require("../db");
 const { auth } = require("../middleware/auth");
 
 const router = express.Router();
@@ -22,16 +22,19 @@ const upload = multer({ storage });
 
 const getMatch = (matchId, userId) => {
   return models.Match.findOne({
-    _id: matchId,
-    $or: [{ user1_id: userId }, { user2_id: userId }]
+    where: {
+      id: matchId,
+      [Op.or]: [{ user1_id: userId }, { user2_id: userId }]
+    }
   });
 };
 
 const toMessagePayload = (message) => {
-  const raw = message?.toObject ? message.toObject() : message;
+  const raw = message?.toJSON ? message.toJSON() : message;
   if (!raw) return raw;
   return {
     ...raw,
+    _id: raw.id,
     status: raw.read_at ? "read" : raw.delivered_at ? "received" : "sent"
   };
 };
@@ -41,7 +44,7 @@ const emitMessageStatus = (req, message) => {
   if (!io || !message) return;
 
   const payload = {
-    message_id: message._id,
+    message_id: message.id,
     match_id: message.match_id,
     delivered_at: message.delivered_at,
     read_at: message.read_at,
@@ -58,7 +61,10 @@ router.get("/:matchId", auth, async (req, res) => {
   const match = await getMatch(matchId, req.user.id);
   if (!match) return res.status(404).json({ error: "Match not found" });
 
-  const messages = await models.Message.find({ match_id: matchId }).sort({ created_at: 1 }).lean();
+  const messages = await models.Message.findAll({
+    where: { match_id: matchId },
+    order: [["created_at", "ASC"]]
+  });
 
   return res.json(messages.map(toMessagePayload));
 });
@@ -166,14 +172,14 @@ router.post("/:matchId/received", auth, async (req, res) => {
   if (!match) return res.status(404).json({ error: "Match not found" });
 
   const messageId = req.body?.messageId;
-  const query = {
+  const where = {
     match_id: matchId,
     to_user_id: req.user.id,
     delivered_at: null
   };
-  if (messageId) query._id = messageId;
+  if (messageId) where.id = messageId;
 
-  const candidates = await models.Message.find(query);
+  const candidates = await models.Message.findAll({ where });
   if (!candidates.length) return res.json({ updated: 0 });
 
   const now = new Date();
@@ -194,14 +200,14 @@ router.post("/:matchId/read", auth, async (req, res) => {
   if (!match) return res.status(404).json({ error: "Match not found" });
 
   const messageId = req.body?.messageId;
-  const query = {
+  const where = {
     match_id: matchId,
     to_user_id: req.user.id,
     read_at: null
   };
-  if (messageId) query._id = messageId;
+  if (messageId) where.id = messageId;
 
-  const candidates = await models.Message.find(query);
+  const candidates = await models.Message.findAll({ where });
   if (!candidates.length) return res.json({ updated: 0 });
 
   const now = new Date();
@@ -223,15 +229,15 @@ router.post("/:matchId/listened", auth, async (req, res) => {
   if (!match) return res.status(404).json({ error: "Match not found" });
 
   const messageId = req.body?.messageId;
-  const query = {
+  const where = {
     match_id: matchId,
     to_user_id: req.user.id,
     type: "audio",
     listened_at: null
   };
-  if (messageId) query._id = messageId;
+  if (messageId) where.id = messageId;
 
-  const candidates = await models.Message.find(query);
+  const candidates = await models.Message.findAll({ where });
   if (!candidates.length) return res.json({ updated: 0 });
 
   const now = new Date();
