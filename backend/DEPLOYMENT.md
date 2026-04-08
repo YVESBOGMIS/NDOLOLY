@@ -87,6 +87,14 @@ Exemple :
 https://ton-backend.onrender.com
 ```
 
-## 7. Etape suivante utile
+## 7. Import legacy
 
-Si tu as deja des donnees MongoDB en production, il faudra ajouter un script d'import MongoDB -> MariaDB.
+Si tu as deja des donnees MongoDB en production, tu peux utiliser le script :
+
+- [import-mongodb.js](C:/Users/YVES%20BOGMIS/Desktop/loveconnect/backend/scripts/import-mongodb.js)
+
+Exemple :
+
+```text
+npm run import:mongo -- --mongo-uri=mongodb://127.0.0.1:27017/loveconnect --force
+```
