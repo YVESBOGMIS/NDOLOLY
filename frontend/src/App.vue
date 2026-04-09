@@ -33,15 +33,20 @@
         @go-login="goLogin"
       />
     </div>
-    <div v-else class="app-shell">
+    <div v-else :class="['app-shell', { 'app-shell-mobile-encounters': current === 'encounters' && !reverificationLocked }]">
       <header class="topbar">
-        <div class="brand luxe">NDOLOLY</div>
-        <div class="topbar-actions">
-          <button v-if="!reverificationLocked" class="button ghost" @click="current = 'filters'">Filtre</button>
-          <button v-if="!reverificationLocked" class="button secondary" @click="handleBoost">Boost</button>
-          <button v-if="!reverificationLocked" class="button ghost" @click="openPremium">Premium</button>
-          <button class="button ghost" @click="current = 'profile'">Profil</button>
-          <button class="button secondary" @click="logout">Se deconnecter</button>
+        <div class="topbar-mobile-head">
+          <div class="mobile-screen-title">{{ currentNavLabel }}</div>
+        </div>
+        <div class="topbar-desktop-head">
+          <div class="brand luxe">NDOLOLY</div>
+          <div class="topbar-actions">
+            <button v-if="!reverificationLocked" class="button ghost" @click="current = 'filters'">Filtre</button>
+            <button v-if="!reverificationLocked" class="button secondary" @click="handleBoost">Boost</button>
+            <button v-if="!reverificationLocked" class="button ghost" @click="openPremium">Premium</button>
+            <button class="button ghost" @click="current = 'profile'">Profil</button>
+            <button class="button secondary" @click="logout">Se deconnecter</button>
+          </div>
         </div>
       </header>
 
@@ -53,12 +58,13 @@
         Nouveau message de {{ toast.fromName }}
       </div>
 
-      <main class="layout">
+      <main :class="['layout', { 'layout-mobile-encounters': current === 'encounters' && !reverificationLocked }]">
         <Encounters
           v-if="!reverificationLocked && current === 'encounters'"
           :profiles="discover"
           :filters="encounterFilters"
           @filters-change="updateEncounterFilters"
+          @open-filters="current = 'filters'"
           @open-profile="openUserProfile"
           @like="handleLike"
           @pass="handlePass"
@@ -115,12 +121,33 @@
       </main>
 
       <nav v-if="!reverificationLocked" class="nav-bottom">
-        <button :class="{ active: current === 'encounters' }" @click="current = 'encounters'">Rencontres</button>
-        <button :class="{ active: current === 'nearby' }" @click="current = 'nearby'">Pres de vous</button>
-        <button :class="{ active: current === 'likes' }" @click="current = 'likes'">Likes</button>
-        <button :class="{ active: current === 'messages' }" @click="openMessages">
-          Messages
-          <span v-if="unreadCount > 0" class="notif-dot">{{ unreadCount }}</span>
+        <button
+          v-for="item in navItems"
+          :key="item.key"
+          :class="{ active: current === item.key }"
+          @click="goToSection(item.key)"
+        >
+          <span class="nav-icon" aria-hidden="true">
+            <svg v-if="item.key === 'encounters'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 21s-6.8-4.35-9-8.19C.78 8.96 2.64 4.5 7 4.5c2.02 0 3.4 1.05 5 3 1.6-1.95 2.98-3 5-3 4.36 0 6.22 4.46 4 8.31C18.8 16.65 12 21 12 21Z" />
+            </svg>
+            <svg v-else-if="item.key === 'nearby'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 21s6-6.02 6-11a6 6 0 1 0-12 0c0 4.98 6 11 6 11Z" />
+              <circle cx="12" cy="10" r="2.4" />
+            </svg>
+            <svg v-else-if="item.key === 'likes'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m12 3 1.9 5.36H19l-4.14 3.14 1.56 5.5L12 13.9 7.58 17l1.56-5.5L5 8.36h5.1L12 3Z" />
+            </svg>
+            <svg v-else-if="item.key === 'messages'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7A2.5 2.5 0 0 1 17.5 16H9l-5 4V6.5Z" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 20a6 6 0 0 0-12 0" />
+              <circle cx="12" cy="8" r="4" />
+            </svg>
+          </span>
+          <span class="nav-label">{{ item.label }}</span>
+          <span v-if="item.key === 'messages' && unreadCount > 0" class="notif-dot">{{ unreadCount }}</span>
         </button>
       </nav>
     </div>
@@ -145,6 +172,7 @@ import MessagesView from "./views/MessagesView.vue";
 import Filters from "./views/Filters.vue";
 import Profile from "./views/Profile.vue";
 import UserProfile from "./views/UserProfile.vue";
+import { sanitizePublicMatches, sanitizePublicProfile, sanitizePublicProfiles } from "./utils";
 
 const current = ref("encounters");
 const user = ref(null);
@@ -174,6 +202,18 @@ const authRoute = ref(window.location.pathname || "/login");
 const authRoutes = new Set(["/login", "/register", "/verify-account", "/reset-password"]);
 const isAdminRoute = computed(() => authRoute.value.startsWith("/admin"));
 const reverificationLocked = computed(() => !!user.value?.reverification_required);
+const navItems = [
+  { key: "encounters", label: "Swipe", title: "Swipe" },
+  { key: "nearby", label: "Proches", title: "Proches" },
+  { key: "likes", label: "Actions", title: "Actions" },
+  { key: "messages", label: "Msg", title: "Messages" },
+  { key: "profile", label: "Profil", title: "Profil" }
+];
+const currentNavLabel = computed(() => {
+  if (current.value === "filters") return "Filtres";
+  if (current.value === "user-profile") return "Profil";
+  return navItems.find((item) => item.key === current.value)?.title || "Swipe";
+});
 let geoWatchId = null;
 
 const setRoute = (path) => {
@@ -333,14 +373,14 @@ const buildDiscoverParams = (filters) => {
 const loadDiscover = async (filters = encounterFilters.value) => {
   const params = buildDiscoverParams(filters);
   const { data } = await api.get("/profile/discover", { params });
-  discover.value = data;
+  discover.value = sanitizePublicProfiles(data);
 };
 
 const loadNearby = async () => {
   try {
     await updateLocationOnce();
     const { data } = await api.get("/profile/nearby");
-    nearby.value = data;
+    nearby.value = sanitizePublicProfiles(data);
   } catch {
     nearby.value = [];
   }
@@ -349,7 +389,7 @@ const loadNearby = async () => {
 const loadLikes = async () => {
   try {
     const { data } = await api.get("/match/liked-me");
-    likedMe.value = data;
+    likedMe.value = sanitizePublicProfiles(data);
     likesPremiumRequired.value = false;
   } catch (err) {
     if (err?.response?.data?.premium_required) {
@@ -363,14 +403,15 @@ const loadLikes = async () => {
 
 const loadProfileViews = async () => {
   const { data } = await api.get("/profile/views");
-  profileViews.value = data;
+  profileViews.value = sanitizePublicProfiles(data);
 };
 
 const loadMatches = async () => {
   const { data } = await api.get("/match/list");
-  matches.value = data;
-  unreadCount.value = data.reduce((sum, item) => sum + (item.unread_count || 0), 0);
-  return data;
+  const visibleMatches = sanitizePublicMatches(data);
+  matches.value = visibleMatches;
+  unreadCount.value = visibleMatches.reduce((sum, item) => sum + (item.unread_count || 0), 0);
+  return visibleMatches;
 };
 
 const loadMessages = async (match) => {
@@ -383,6 +424,12 @@ const loadMessages = async (match) => {
 const bootstrap = async () => {
   try {
     await loadProfile();
+    if (user.value?.role === "admin") {
+      clearToken();
+      user.value = null;
+      setRoute("/admin");
+      return;
+    }
     if (user.value?.reverification_required) {
       current.value = "profile";
       stopLocationWatch();
@@ -645,7 +692,7 @@ const openUserProfile = async (profile) => {
   current.value = "user-profile";
   try {
     const { data } = await api.get(`/profile/user/${id}`);
-    selectedProfile.value = data;
+    selectedProfile.value = sanitizePublicProfile(data);
   } catch (err) {
     selectedProfile.value = null;
   } finally {
@@ -691,6 +738,14 @@ const handleBoost = async () => {
 
 const openPremium = () => {
   current.value = "encounters";
+};
+
+const goToSection = (section) => {
+  if (section === "messages") {
+    openMessages();
+    return;
+  }
+  current.value = section;
 };
 
 const openMessages = () => {

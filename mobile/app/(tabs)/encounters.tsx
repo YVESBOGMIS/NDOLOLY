@@ -1,15 +1,16 @@
-﻿﻿import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View, Image } from 'react-native';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import { Alert, GestureResponderEvent, Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as SecureStore from 'expo-secure-store';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import { api } from '@/lib/api';
-import { computeAge, resolvePhoto } from '@/lib/utils';
-import BrandMark from '@/components/BrandMark';
+import { computeAge, resolvePhoto, sanitizePublicProfiles } from '@/lib/utils';
 import { getFilters } from '@/lib/filters';
 import { isVerificationRequiredError, showVerificationRequiredPrompt } from '@/lib/verification-gate';
 
@@ -55,12 +56,13 @@ const findNextUnseenIndex = (list: any[], seen: Set<string>, start = 0) => {
 
 export default function EncountersScreen() {
   const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme];
+  const colors = Colors[colorScheme ?? 'light'];
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
   const [feed, setFeed] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
-  const [filters, setFilters] = useState<Record<string, string>>({});
   const [cursor, setCursor] = useState(0);
   const [feedKey, setFeedKey] = useState('');
   const [verificationStatus, setVerificationStatus] = useState<'approved' | 'pending' | 'rejected' | 'none'>('none');
@@ -78,7 +80,7 @@ export default function EncountersScreen() {
   const photos = useMemo(() => {
     if (!current) return [];
     const raw = Array.isArray(current.photos) ? current.photos : [];
-    const list = raw.map((photo) => resolvePhoto(photo)).filter(Boolean);
+    const list = raw.map((photo: any) => resolvePhoto(photo)).filter(Boolean);
     return list.length > 0 ? list : [FALLBACK_PHOTO];
   }, [current]);
 
@@ -125,7 +127,6 @@ export default function EncountersScreen() {
   const load = useCallback(
     async ({ force = false, allowRestart = true }: { force?: boolean; allowRestart?: boolean } = {}) => {
       const savedFilters = (await getFilters()) || {};
-      setFilters(savedFilters);
       const { params, key } = buildFilterParams(savedFilters);
       const shouldReload = force || feed.length === 0 || key !== feedKey;
       if (!shouldReload) return;
@@ -145,7 +146,7 @@ export default function EncountersScreen() {
           api.get(path),
           api.get(`/profile/verification-status?ts=${Date.now()}`),
         ]);
-        let nextList = Array.isArray(data) ? data : [];
+        let nextList = sanitizePublicProfiles(Array.isArray(data) ? data : []);
         setVerificationStatus(statusData?.status || 'none');
 
         let nextCursor = 0;
@@ -316,30 +317,29 @@ export default function EncountersScreen() {
     setPhotoIndex((prev) => (prev - 1 + photos.length) % photos.length);
   };
 
-  const filterCount = useMemo(() => {
-    return Object.values(filters || {}).filter((value) => value && String(value).trim().length > 0).length;
-  }, [filters]);
+  const handlePhotoTap = (event: GestureResponderEvent) => {
+    if (photos.length <= 1) {
+      openProfile();
+      return;
+    }
+    const tapX = event.nativeEvent.locationX;
+    if (tapX < screenWidth / 2) {
+      prevPhoto();
+      return;
+    }
+    nextPhoto();
+  };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.header}>
-        <View>
-          <BrandMark size="sub" />
-          <Text style={[styles.title, { color: colors.text }]}>Rencontres</Text>
-          <Text style={[styles.subtitle, { color: colors.text }]}>Decouvrez des profils compatibles.</Text>
-        </View>
+    <View style={styles.container}>
+      <View style={[styles.overlayHeader, { top: insets.top + 12 }]}>
         <Pressable style={styles.filterButton} onPress={() => router.push('/filters')}>
-          <Ionicons name="options" size={18} color="#ff5a5f" />
-          <Text style={styles.filterText}>Filtre</Text>
-          {filterCount > 0 ? (
-            <View style={styles.filterBadge}>
-              <Text style={styles.filterBadgeText}>{filterCount}</Text>
-            </View>
-          ) : null}
+          <Ionicons name="options" size={22} color="#fff" />
         </Pressable>
+        <Text style={styles.mobileLogo}>NDOLOLY</Text>
       </View>
 
-      {loading && <Text style={[styles.subtitle, { color: colors.text }]}>Chargement...</Text>}
+      {loading && <Text style={[styles.loadingText, { top: insets.top + 70 }]}>Chargement...</Text>}
 
       {!canInteract ? (
         <Pressable style={styles.noticeCard} onPress={promptVerificationRequired}>
@@ -352,17 +352,18 @@ export default function EncountersScreen() {
 
       {!current && !loading ? (
         <View style={styles.emptyWrap}>
-          <Text style={[styles.subtitle, { color: colors.text }]}>Plus de profils.</Text>
+          <Text style={[styles.emptyText, { color: colors.text }]}>Plus de profils.</Text>
         </View>
       ) : null}
 
       {current ? (
-        <View style={[styles.card, { backgroundColor: colors.card }]}> 
+        <View style={styles.card}>
           <View style={styles.imageContainer}>
-            <Pressable style={styles.imagePressable} onPress={nextPhoto}>
+            <Pressable style={styles.imagePressable} onPress={handlePhotoTap}>
               <Image
                 source={{ uri: currentPhoto }}
                 style={styles.cardImage}
+                resizeMode="cover"
               />
             </Pressable>
             {photos.length > 1 ? (
@@ -373,8 +374,8 @@ export default function EncountersScreen() {
                 <Pressable style={[styles.navButton, styles.navRight]} onPress={nextPhoto}>
                   <Ionicons name="chevron-forward" size={20} color="#fff" />
                 </Pressable>
-                <View style={styles.dots}>
-                  {photos.map((_, idx) => (
+                <View style={[styles.dots, { top: insets.top + 64 }]}>
+                  {photos.map((_: string, idx: number) => (
                     <View
                       key={`dot-${idx}`}
                       style={[styles.dot, idx === photoIndex && styles.dotActive]}
@@ -385,43 +386,37 @@ export default function EncountersScreen() {
             ) : null}
           </View>
 
-          <Pressable style={styles.info} onPress={openProfile}>
-            <Text style={[styles.cardTitle, { color: colors.text }]}> 
-              {current.name} · {computeAge(current.birthdate) === '-' ? current.age : computeAge(current.birthdate)}
-            </Text>
-            <Text style={[styles.cardSubtitle, { color: colors.text }]}>{current.location}</Text>
-            {current?.family_status ? (
-              <Text style={[styles.cardMeta, { color: colors.text }]}>
-                Statut: {current.family_status === 'celibataire' ? 'Celibataire' : 'Marie(e)'}
+          <LinearGradient
+            pointerEvents="box-none"
+            colors={['rgba(18,18,23,0)', 'rgba(18,18,23,0.68)', 'rgba(18,18,23,0.95)']}
+            locations={[0, 0.34, 1]}
+            style={[styles.content, { paddingBottom: 96 + insets.bottom }]}
+          >
+            <Pressable style={styles.titleRow} onPress={openProfile}>
+              <Text style={styles.cardTitle}>
+                {current.name} <Text style={styles.cardAge}>{computeAge(current.birthdate) === '-' ? current.age : computeAge(current.birthdate)}</Text>
               </Text>
-            ) : null}
-            {current?.looking_for ? (
-              <Text style={[styles.cardMeta, { color: colors.text }]}>
-                Recherche: {current.looking_for === 'amour' ? 'Amour' : 'Amitie'}
-              </Text>
-            ) : null}
-            {current?.bio ? (
-              <Text
-                style={[styles.cardBio, { color: colors.text }]}
-                numberOfLines={2}
-                ellipsizeMode="tail"
-              >
-                {current.bio}
-              </Text>
-            ) : null}
-          </Pressable>
+              <View style={[styles.verifiedIcon, current.verified_photo && styles.verifiedIconActive]}>
+                <Text style={styles.verifiedIconText}>{current.verified_photo ? '✓' : '!'}</Text>
+              </View>
+            </Pressable>
 
-          <View style={styles.actions}>
-            <Pressable style={[styles.actionButton, styles.pass]} onPress={pass}>
-              <Ionicons name="close" size={24} color="#111" />
-            </Pressable>
-            <Pressable style={[styles.actionButton, styles.super]} onPress={superlike}>
-              <Ionicons name="star" size={22} color="#fff" />
-            </Pressable>
-            <Pressable style={[styles.actionButton, styles.like]} onPress={like}>
-              <Ionicons name="heart" size={22} color="#fff" />
-            </Pressable>
-          </View>
+            <Text style={styles.cardBio} numberOfLines={1} ellipsizeMode="tail">
+              {current.bio || 'A propos non renseigne.'}
+            </Text>
+
+            <View style={styles.actions}>
+              <Pressable style={[styles.actionButton, styles.pass]} onPress={pass}>
+                <Ionicons name="close" size={24} color="#ff5a86" />
+              </Pressable>
+              <Pressable style={[styles.actionButton, styles.super]} onPress={superlike}>
+                <Ionicons name="star" size={22} color="#2797ff" />
+              </Pressable>
+              <Pressable style={[styles.actionButton, styles.like]} onPress={like}>
+                <Ionicons name="heart" size={22} color="#75e247" />
+              </Pressable>
+            </View>
+          </LinearGradient>
         </View>
       ) : null}
     </View>
@@ -431,64 +426,59 @@ export default function EncountersScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    paddingBottom: 12,
+    backgroundColor: '#050506',
   },
-  header: {
-    marginBottom: 10,
-    gap: 6,
+  overlayHeader: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    zIndex: 30,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  subtitle: {
-    fontSize: 14,
-    opacity: 0.7,
-  },
   filterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 90, 95, 0.5)',
-    backgroundColor: 'rgba(255, 90, 95, 0.12)',
-  },
-  filterText: {
-    color: '#ff5a5f',
-    fontWeight: '700',
-  },
-  filterBadge: {
-    marginLeft: 4,
-    backgroundColor: '#ff5a5f',
-    borderRadius: 999,
-    minWidth: 20,
-    height: 20,
+    width: 28,
+    height: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 6,
   },
-  filterBadgeText: {
-    color: '#fff',
+  mobileLogo: {
+    color: '#d4af37',
     fontSize: 11,
     fontWeight: '700',
+    letterSpacing: 4,
+    textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 10,
   },
   emptyWrap: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  emptyText: {
+    fontSize: 14,
+    opacity: 0.7,
+  },
+  loadingText: {
+    position: 'absolute',
+    left: 16,
+    zIndex: 30,
+    color: '#fff',
+    fontSize: 14,
+  },
   noticeCard: {
+    position: 'absolute',
+    top: 88,
+    left: 14,
+    right: 14,
+    zIndex: 25,
     marginBottom: 12,
     padding: 14,
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 90, 95, 0.12)',
+    backgroundColor: 'rgba(255, 90, 95, 0.86)',
     borderWidth: 1,
     borderColor: 'rgba(255, 90, 95, 0.28)',
     gap: 4,
@@ -499,20 +489,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   noticeText: {
-    color: '#7d1e2e',
+    color: '#fff',
     fontSize: 13,
     lineHeight: 18,
   },
   card: {
     flex: 1,
-    borderRadius: 22,
-    padding: 12,
-    gap: 10,
+    backgroundColor: '#050506',
+    position: 'relative',
   },
   imageContainer: {
     flex: 1,
-    minHeight: 320,
-    borderRadius: 20,
     overflow: 'hidden',
     position: 'relative',
   },
@@ -524,15 +511,7 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   navButton: {
-    position: 'absolute',
-    top: '50%',
-    transform: [{ translateY: -16 }],
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(26, 26, 29, 0.65)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    display: 'none',
   },
   navLeft: {
     left: 10,
@@ -542,68 +521,89 @@ const styles = StyleSheet.create({
   },
   dots: {
     position: 'absolute',
-    bottom: 8,
     alignSelf: 'center',
     flexDirection: 'row',
     gap: 6,
   },
   dot: {
-    width: 6,
-    height: 6,
+    width: 18,
+    height: 2,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.6)',
+    backgroundColor: 'rgba(255,255,255,0.38)',
   },
   dotActive: {
-    backgroundColor: '#ff5a5f',
+    backgroundColor: '#fff',
   },
-  info: {
-    gap: 2,
+  content: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 14,
+    minHeight: 250,
+    justifyContent: 'flex-end',
+    paddingHorizontal: 16,
+    paddingTop: 72,
+    gap: 8,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingRight: 42,
   },
   cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+    color: '#fff',
+    fontSize: 22,
+    lineHeight: 24,
+    fontWeight: '700',
   },
-  cardSubtitle: {
-    fontSize: 13,
-    opacity: 0.6,
+  cardAge: {
+    fontWeight: '700',
   },
-  cardMeta: {
-    fontSize: 12,
-    opacity: 0.65,
-    marginTop: 2,
+  verifiedIcon: {
+    width: 18,
+    height: 18,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#a8adb7',
+  },
+  verifiedIconActive: {
+    backgroundColor: '#2797ff',
+  },
+  verifiedIconText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
+    lineHeight: 13,
   },
   cardBio: {
+    color: 'rgba(255,255,255,0.88)',
     fontSize: 13,
-    opacity: 0.8,
-    marginTop: 4,
-    lineHeight: 18,
+    lineHeight: 17,
   },
   actions: {
-    marginTop: 'auto',
     flexDirection: 'row',
     gap: 10,
+    marginTop: 14,
   },
   actionButton: {
     flex: 1,
-    padding: 12,
+    height: 52,
     borderRadius: 999,
     alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   pass: {
-    backgroundColor: '#f0f0f0',
+    backgroundColor: 'rgba(255,255,255,0.14)',
   },
   super: {
-    backgroundColor: '#4ecdc4',
+    backgroundColor: 'rgba(39,151,255,0.16)',
   },
   like: {
-    backgroundColor: '#ff5a5f',
-  },
-  actionTextLight: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  actionTextDark: {
-    color: '#111',
-    fontWeight: '600',
+    backgroundColor: 'rgba(108,222,76,0.18)',
   },
 });
