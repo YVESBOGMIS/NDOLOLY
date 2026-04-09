@@ -21,7 +21,7 @@
     </div>
     <h2>Messages</h2>
     <div class="chat-layout">
-      <div>
+      <div v-if="showConversationList">
         <div class="field">
           <input v-model="search" placeholder="Rechercher un match..." />
         </div>
@@ -47,7 +47,7 @@
           </div>
         </div>
       </div>
-      <div>
+      <div v-if="showActivePanel">
         <div v-if="!activeMatch" class="muted">Selectionnez un match pour discuter.</div>
         <div v-else>
             <div class="chat-frame">
@@ -120,7 +120,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { resolvePhoto } from "../utils";
 
 const props = defineProps({
@@ -138,6 +138,7 @@ const fileInput = ref(null);
 const isRecording = ref(false);
 const recorder = ref(null);
 const recordChunks = ref([]);
+const isMobile = ref(false);
 const placeholder = "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=200&q=80";
 
 const newMatches = computed(() => props.matches.filter((m) => !m.has_messages));
@@ -148,6 +149,9 @@ const filteredConversations = computed(() => {
   if (!term) return conversations.value;
   return conversations.value.filter((m) => m.user?.name?.toLowerCase().includes(term));
 });
+
+const showConversationList = computed(() => !isMobile.value || !props.activeMatch);
+const showActivePanel = computed(() => !isMobile.value || !!props.activeMatch);
 
 const select = (match) => emit("select", match);
 const closeChat = () => emit("close");
@@ -215,4 +219,18 @@ const formatUnread = (count) => {
   if (!count || count <= 0) return "";
   return count > 9 ? "9+" : String(count);
 };
+
+const syncViewport = () => {
+  if (typeof window === "undefined") return;
+  isMobile.value = window.innerWidth <= 720;
+};
+
+onMounted(() => {
+  syncViewport();
+  window.addEventListener("resize", syncViewport);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("resize", syncViewport);
+});
 </script>
