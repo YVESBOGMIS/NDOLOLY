@@ -20,7 +20,7 @@
         </div>
         <div class="field">
           <label>Mot de passe</label>
-          <input v-model="password" type="password" />
+          <PasswordInput v-model="password" autocomplete="current-password" />
         </div>
         <button class="button" type="submit">Se connecter</button>
       </form>
@@ -83,7 +83,7 @@
         </div>
         <div class="field">
           <label>Mot de passe</label>
-          <input v-model="password" type="password" />
+          <PasswordInput v-model="password" autocomplete="new-password" />
         </div>
         <button class="button" type="submit">Creer mon compte</button>
       </form>
@@ -108,7 +108,7 @@
         </div>
         <div class="field">
           <label>Nouveau mot de passe</label>
-          <input v-model="newPassword" type="password" />
+          <PasswordInput v-model="newPassword" autocomplete="new-password" />
         </div>
         <div class="field">
           <label>Code OTP</label>
@@ -125,6 +125,7 @@
 <script setup>
 import { ref } from "vue";
 import api, { setToken } from "../api";
+import PasswordInput from "../components/PasswordInput.vue";
 
 const emit = defineEmits(["authenticated"]);
 

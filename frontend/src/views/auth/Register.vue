@@ -34,12 +34,20 @@
         <div class="grid two">
           <div class="field">
             <label>Mot de passe</label>
-            <input v-model="password" type="password" :class="{ 'input-error': errors.password }" />
+            <PasswordInput
+              v-model="password"
+              autocomplete="new-password"
+              :input-class="{ 'input-error': errors.password }"
+            />
             <small v-if="errors.password" class="field-error">{{ errors.password }}</small>
           </div>
           <div class="field">
             <label>Confirmer mot de passe</label>
-            <input v-model="confirmPassword" type="password" :class="{ 'input-error': errors.confirmPassword }" />
+            <PasswordInput
+              v-model="confirmPassword"
+              autocomplete="new-password"
+              :input-class="{ 'input-error': errors.confirmPassword }"
+            />
             <small v-if="errors.confirmPassword" class="field-error">{{ errors.confirmPassword }}</small>
           </div>
         </div>
@@ -78,6 +86,7 @@
 <script setup>
 import { ref } from "vue";
 import api from "../../api";
+import PasswordInput from "../../components/PasswordInput.vue";
 
 const emit = defineEmits(["registered", "go-login"]);
 

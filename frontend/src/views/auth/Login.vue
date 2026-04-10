@@ -15,7 +15,7 @@
         </div>
         <div class="field">
           <label>Mot de passe</label>
-          <input v-model="password" type="password" />
+          <PasswordInput v-model="password" autocomplete="current-password" />
         </div>
         <div class="auth-row">
           <button class="link" type="button" @click="$emit('go-reset')">Mot de passe oublie ?</button>
@@ -34,6 +34,7 @@
 <script setup>
 import { ref } from "vue";
 import api, { setToken } from "../../api";
+import PasswordInput from "../../components/PasswordInput.vue";
 
 const emit = defineEmits(["authenticated", "go-register", "go-reset"]);
 

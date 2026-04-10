@@ -25,11 +25,11 @@
         </div>
         <div class="field">
           <label>Nouveau mot de passe</label>
-          <input v-model="newPassword" type="password" />
+          <PasswordInput v-model="newPassword" autocomplete="new-password" />
         </div>
         <div class="field">
           <label>Confirmer mot de passe</label>
-          <input v-model="confirmPassword" type="password" />
+          <PasswordInput v-model="confirmPassword" autocomplete="new-password" />
         </div>
         <button class="button auth-button" type="submit">Reinitialiser le mot de passe</button>
       </form>
@@ -44,6 +44,7 @@
 <script setup>
 import { ref } from "vue";
 import api from "../../api";
+import PasswordInput from "../../components/PasswordInput.vue";
 
 const emit = defineEmits(["go-login"]);
 

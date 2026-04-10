@@ -16,7 +16,7 @@
         </div>
         <div class="field">
           <label>Mot de passe</label>
-          <input v-model="password" type="password" />
+          <PasswordInput v-model="password" autocomplete="current-password" />
         </div>
         <button class="button auth-button" type="submit">Entrer dans le dashboard</button>
       </form>
@@ -32,6 +32,7 @@
 <script setup>
 import { ref } from "vue";
 import adminApi, { setAdminToken } from "../../adminApi";
+import PasswordInput from "../../components/PasswordInput.vue";
 
 const emit = defineEmits(["authenticated", "go-user-app"]);
 
