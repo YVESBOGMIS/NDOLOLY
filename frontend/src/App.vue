@@ -114,7 +114,7 @@
           v-if="!reverificationLocked && current === 'user-profile'"
           :profile="selectedProfile"
           :loading="profileLoading"
-          @back="current = 'likes'"
+          @back="current = userProfileBackTarget"
         />
         <MessagesView
           v-if="!reverificationLocked && current === 'messages'"
@@ -134,6 +134,7 @@
           @updated="reloadProfile"
           @deleted="logout"
           @logout="logout"
+          @preview="openUserProfile(user, { backTarget: 'profile' })"
           @back="current = 'encounters'"
         />
       </main>
@@ -218,6 +219,7 @@ const actionToast = ref({ visible: false, message: "" });
 const verificationGateOpen = ref(false);
 const selectedProfile = ref(null);
 const profileLoading = ref(false);
+const userProfileBackTarget = ref("encounters");
 const authRoute = ref(window.location.pathname || "/login");
 const authRoutes = new Set(["/login", "/register", "/verify-account", "/reset-password"]);
 const isAdminRoute = computed(() => authRoute.value.startsWith("/admin"));
@@ -717,9 +719,14 @@ const updateEncounterFilters = async (nextFilters) => {
   await loadDiscover(encounterFilters.value);
 };
 
-const openUserProfile = async (profile) => {
+const openUserProfile = async (profile, options = {}) => {
   const id = profile?.id || profile?._id || profile;
   if (!id) return;
+  if (options.backTarget) {
+    userProfileBackTarget.value = options.backTarget;
+  } else if (current.value !== "user-profile") {
+    userProfileBackTarget.value = current.value;
+  }
   profileLoading.value = true;
   selectedProfile.value = null;
   current.value = "user-profile";

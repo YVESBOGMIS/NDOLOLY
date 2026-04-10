@@ -3,6 +3,7 @@
     <h2>Mon profil</h2>
     <div class="actions" style="margin-bottom: 12px;">
       <button class="button ghost" @click="$emit('back')">Retour</button>
+      <button class="button ghost" type="button" @click="$emit('preview')">Apercu</button>
       <button class="button secondary" type="button" @click="$emit('logout')">Se deconnecter</button>
     </div>
 
@@ -186,11 +187,20 @@
 
     <div v-if="!form.reverification_required" class="photo-list" style="margin-top: 12px;">
       <div v-for="(photo, index) in form.photos" :key="photo + index" class="photo-item">
-        <img :src="resolvePhotoSrc(photo)" alt="photo" @error="handleImgError(photo)" />
+        <button class="photo-preview-trigger" type="button" @click="openPhotoPreview(photo)" aria-label="Agrandir la photo">
+          <img :src="resolvePhotoSrc(photo)" alt="photo" @error="handleImgError(photo)" />
+        </button>
         <div class="photo-actions">
           <button class="button tiny secondary" @click="startReplace(photo)">Modifier</button>
           <button class="button tiny danger" @click="deletePhoto(photo)">Supprimer</button>
         </div>
+      </div>
+    </div>
+
+    <div v-if="photoPreviewSrc" class="modal photo-preview-wrap" @click.self="closePhotoPreview">
+      <div class="photo-preview-modal fullscreen">
+        <button class="photo-preview-close" type="button" @click="closePhotoPreview" aria-label="Fermer">×</button>
+        <img class="photo-preview-image fullscreen" :src="photoPreviewSrc" alt="photo" />
       </div>
     </div>
   </div>
@@ -205,7 +215,7 @@ const props = defineProps({
   profile: { type: Object, default: null }
 });
 
-const emit = defineEmits(["updated", "back", "deleted", "logout"]);
+const emit = defineEmits(["updated", "back", "deleted", "logout", "preview"]);
 
 const form = ref({
   name: "",
@@ -241,6 +251,7 @@ const replaceInput = ref(null);
 const verificationInput = ref(null);
 const replaceTarget = ref(null);
 const photoBust = ref({});
+const photoPreviewSrc = ref("");
 const saving = ref(false);
 const saveStatus = ref("");
 const deleting = ref(false);
@@ -420,6 +431,14 @@ const resolvePhotoSrc = (photo) => {
 const handleImgError = (photo) => {
   if (!photo) return;
   photoBust.value = { ...photoBust.value, [photo]: Date.now() };
+};
+
+const openPhotoPreview = (photo) => {
+  photoPreviewSrc.value = resolvePhotoSrc(photo);
+};
+
+const closePhotoPreview = () => {
+  photoPreviewSrc.value = "";
 };
 
 const deleteAccount = async () => {

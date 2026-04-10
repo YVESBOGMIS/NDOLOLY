@@ -8,7 +8,9 @@
     <div v-else-if="!profile" class="muted">Profil introuvable.</div>
     <div v-else class="profile-view">
       <div class="profile-hero">
-        <img class="profile-main" :src="mainPhoto" alt="Photo principale" />
+        <button class="profile-main-trigger" type="button" @click="openPhotoPreview(mainPhoto)" aria-label="Agrandir la photo">
+          <img class="profile-main" :src="mainPhoto" alt="Photo principale" />
+        </button>
         <div class="profile-info">
           <div class="profile-title">
             <h2>{{ profile.name }} · {{ age }}</h2>
@@ -25,7 +27,7 @@
               :key="photo + idx"
               class="gallery-item"
               :class="{ active: photo === selectedPhoto }"
-              @click="selectPhoto(photo)"
+              @click="selectPhoto(photo); openPhotoPreview(resolvePhoto(photo))"
             >
               <img :src="resolvePhoto(photo)" alt="Galerie" />
             </button>
@@ -73,6 +75,13 @@
         </div>
       </div>
     </div>
+
+    <div v-if="photoPreviewSrc" class="modal photo-preview-wrap" @click.self="closePhotoPreview">
+      <div class="photo-preview-modal fullscreen">
+        <button class="photo-preview-close" type="button" @click="closePhotoPreview" aria-label="Fermer">×</button>
+        <img class="photo-preview-image fullscreen" :src="photoPreviewSrc" alt="photo" />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -86,6 +95,7 @@ const props = defineProps({
 });
 
 const selectedPhoto = ref(null);
+const photoPreviewSrc = ref("");
 
 watch(
   () => props.profile?.id,
@@ -123,6 +133,15 @@ const galleryPhotos = computed(() => {
 const selectPhoto = (photo) => {
   if (!photo) return;
   selectedPhoto.value = photo;
+};
+
+const openPhotoPreview = (src) => {
+  if (!src) return;
+  photoPreviewSrc.value = String(src);
+};
+
+const closePhotoPreview = () => {
+  photoPreviewSrc.value = "";
 };
 
 const heightText = computed(() => {
