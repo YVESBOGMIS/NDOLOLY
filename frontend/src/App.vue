@@ -33,17 +33,7 @@
         @go-login="goLogin"
       />
     </div>
-    <div
-      v-else
-      :class="[
-        'app-shell',
-        {
-          'app-shell-mobile-encounters': current === 'encounters' && !reverificationLocked,
-          'app-shell-mobile-messages': current === 'messages' && !reverificationLocked,
-          'app-shell-mobile-messages-chat': current === 'messages' && !!activeMatch && !reverificationLocked
-        }
-      ]"
-    >
+    <div v-else :class="['app-shell', { 'app-shell-mobile-encounters': current === 'encounters' && !reverificationLocked }]">
       <header class="topbar">
         <div class="topbar-mobile-head">
           <div class="mobile-screen-title">{{ currentNavLabel }}</div>
@@ -85,7 +75,7 @@
         </div>
       </div>
 
-      <main :class="['layout', { 'layout-mobile-encounters': current === 'encounters' && !reverificationLocked, 'layout-mobile-messages': current === 'messages' && !reverificationLocked }]">
+      <main :class="['layout', { 'layout-mobile-encounters': current === 'encounters' && !reverificationLocked }]">
         <Encounters
           v-if="!reverificationLocked && current === 'encounters'"
           :profiles="discover"
@@ -247,41 +237,6 @@ const currentNavLabel = computed(() => {
   return navItems.find((item) => item.key === current.value)?.title || "Swipe";
 });
 let geoWatchId = null;
-let visualViewportListening = false;
-
-const syncVisualViewportVars = () => {
-  if (typeof window === "undefined") return;
-  const root = document?.documentElement;
-  if (!root) return;
-  const vv = window.visualViewport;
-  if (!vv) {
-    root.style.removeProperty("--vvh");
-    root.style.removeProperty("--vv-top");
-    root.style.removeProperty("--keyboard-offset");
-    return;
-  }
-
-  // Visible viewport height (excludes on-screen keyboard).
-  root.style.setProperty("--vvh", `${Math.round(vv.height)}px`);
-  root.style.setProperty("--vv-top", `${Math.round(vv.offsetTop || 0)}px`);
-
-  // Approx keyboard height in px (layout viewport - visual viewport).
-  const keyboardOffset = Math.max(0, window.innerHeight - vv.height - (vv.offsetTop || 0));
-  root.style.setProperty("--keyboard-offset", `${Math.round(keyboardOffset)}px`);
-};
-
-const handleVisualViewportChange = () => syncVisualViewportVars();
-const handleWindowViewportChange = () => syncVisualViewportVars();
-const handleFocusIn = () => {
-  // iOS/Safari sometimes updates visualViewport after focus, so resync twice.
-  if (typeof requestAnimationFrame === "function") {
-    requestAnimationFrame(syncVisualViewportVars);
-  }
-  setTimeout(syncVisualViewportVars, 60);
-};
-const handleFocusOut = () => {
-  setTimeout(syncVisualViewportVars, 120);
-};
 
 const setRoute = (path) => {
   if (window.location.pathname === path) {
@@ -840,18 +795,6 @@ onMounted(async () => {
   syncRoute();
   window.addEventListener("popstate", handlePopState);
 
-  // Keep CSS vars in sync with the visible viewport on mobile when the keyboard opens.
-  syncVisualViewportVars();
-  window.addEventListener("resize", handleWindowViewportChange, { passive: true });
-  window.addEventListener("orientationchange", handleWindowViewportChange, { passive: true });
-  window.addEventListener("focusin", handleFocusIn);
-  window.addEventListener("focusout", handleFocusOut);
-  if (window.visualViewport && !visualViewportListening) {
-    window.visualViewport.addEventListener("resize", handleVisualViewportChange, { passive: true });
-    window.visualViewport.addEventListener("scroll", handleVisualViewportChange, { passive: true });
-    visualViewportListening = true;
-  }
-
   if (isAdminRoute.value) {
     if (getAdminToken()) {
       try {
@@ -878,15 +821,6 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("popstate", handlePopState);
-  window.removeEventListener("resize", handleWindowViewportChange);
-  window.removeEventListener("orientationchange", handleWindowViewportChange);
-  window.removeEventListener("focusin", handleFocusIn);
-  window.removeEventListener("focusout", handleFocusOut);
-  if (window.visualViewport && visualViewportListening) {
-    window.visualViewport.removeEventListener("resize", handleVisualViewportChange);
-    window.visualViewport.removeEventListener("scroll", handleVisualViewportChange);
-    visualViewportListening = false;
-  }
   stopLocationWatch();
 });
 </script>
