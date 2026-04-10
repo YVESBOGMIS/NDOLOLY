@@ -1,6 +1,6 @@
 ﻿﻿﻿﻿<template>
-  <div class="card">
-    <div v-if="newMatches.length">
+  <div class="card messages-view">
+    <div v-if="!isChatOpen && newMatches.length">
       <div class="section-title">Nouveaux matchs</div>
       <div class="match-strip">
         <div
@@ -19,7 +19,7 @@
         </div>
       </div>
     </div>
-    <h2>Messages</h2>
+    <h2 v-if="!isChatOpen">Messages</h2>
     <div class="chat-layout">
       <div v-if="showConversationList">
         <div class="field">
@@ -50,7 +50,7 @@
       <div v-if="showActivePanel">
         <div v-if="!activeMatch" class="muted">Selectionnez un match pour discuter.</div>
         <div v-else>
-            <div class="chat-frame">
+            <div class="chat-frame chat-frame-mobile">
               <div class="chat-header">
                 <img :src="resolvePhoto(activeMatch.user?.photos?.[0]) || placeholder" alt="" />
                 <div>
@@ -87,7 +87,7 @@
               </div>
             </div>
           </div>
-          <form class="actions input-send chat-input" @submit.prevent="send">
+          <form class="actions input-send chat-input chat-composer" @submit.prevent="send">
             <button class="attach-icon" type="button" aria-label="Ajouter une image" @click="openFile">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M16.5 6.5l-7.8 7.8a2.5 2.5 0 003.5 3.5l8-8a4 4 0 10-5.7-5.7l-8 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -143,6 +143,7 @@ const placeholder = "https://images.unsplash.com/photo-1524504388940-b1c1722653e
 
 const newMatches = computed(() => props.matches.filter((m) => !m.has_messages));
 const conversations = computed(() => props.matches.filter((m) => m.has_messages));
+const isChatOpen = computed(() => isMobile.value && !!props.activeMatch);
 
 const filteredConversations = computed(() => {
   const term = search.value.toLowerCase();
