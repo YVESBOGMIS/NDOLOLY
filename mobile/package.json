@@ -7,9 +7,9 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "build:android:apk": "npx eas build --platform android --profile preview",
-    "build:android:aab": "npx eas build --platform android --profile production",
-    "submit:android:play": "npx eas submit --platform android --profile production"
+    "build:android:apk": "set EAS_NO_VCS=1&& eas build --platform android --profile preview",
+    "build:android:aab": "set EAS_NO_VCS=1&& eas build --platform android --profile production",
+    "submit:android:play": "set EAS_NO_VCS=1&& eas submit --platform android --profile production"
   },
   "dependencies": {
     "@expo-google-fonts/playfair-display": "^0.4.2",
@@ -46,6 +46,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.10",
+    "eas-cli": "^18.4.0",
     "qrcode-terminal": "^0.12.0",
     "typescript": "~5.9.2"
   },

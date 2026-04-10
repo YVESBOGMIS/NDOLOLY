@@ -1,12 +1,29 @@
-const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:4000";
+const apiUrl = import.meta.env.VITE_API_URL || "";
 
 const STAFF_NAME_PATTERN = /\b(admin|backoffice)\b/i;
 const STAFF_META_PATTERN = /\b(admin|backoffice|moderation|administration|staff|support)\b/i;
 
 export const resolvePhoto = (path) => {
   if (!path) return "";
-  if (path.startsWith("http")) return path;
-  return `${apiUrl}${path}`;
+  const raw = String(path);
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const base = apiUrl || origin;
+  const joinBase = (b, p) => `${b}${p.startsWith("/") ? p : `/${p}`}`;
+
+  if (/^https?:\/\//i.test(raw)) {
+    // If backend returned localhost URLs, rewrite to the current host (works on phone + Vite proxy).
+    try {
+      const url = new URL(raw);
+      if (["localhost", "127.0.0.1", "::1"].includes(url.hostname) && base) {
+        return `${joinBase(base, url.pathname)}${url.search}${url.hash}`;
+      }
+    } catch {
+      // If URL parsing fails, keep original.
+    }
+    return raw;
+  }
+
+  return base ? joinBase(base, raw) : raw;
 };
 
 export const isPrivateStaffProfile = (profile) => {

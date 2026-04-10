@@ -6,7 +6,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import { api } from '@/lib/api';
-import { resolvePhoto } from '@/lib/utils';
+import { resolvePhoto, sanitizePublicProfiles } from '@/lib/utils';
 import BrandMark from '@/components/BrandMark';
 import { isVerificationRequiredError, showVerificationRequiredPrompt } from '@/lib/verification-gate';
 
@@ -35,10 +35,10 @@ export default function ActionsScreen() {
         api.get(`/profile/verification-status?ts=${Date.now()}`),
       ]);
       setVerificationStatus(statusData?.status || 'none');
-      setViews(viewsData || []);
+      setViews(sanitizePublicProfiles(viewsData || []));
       try {
         const likesData = await api.get('/match/liked-me');
-        setLikes(likesData || []);
+        setLikes(sanitizePublicProfiles(likesData || []));
         setLikesPremiumRequired(false);
       } catch (err) {
         if (err instanceof Error && /premium required/i.test(err.message)) {

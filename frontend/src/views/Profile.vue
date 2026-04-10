@@ -3,6 +3,7 @@
     <h2>Mon profil</h2>
     <div class="actions" style="margin-bottom: 12px;">
       <button class="button ghost" @click="$emit('back')">Retour</button>
+      <button class="button secondary" type="button" @click="$emit('logout')">Se deconnecter</button>
     </div>
 
     <div v-if="!form.verified_photo" :class="['verification-card', { rejected: verification?.status === 'rejected' }]">
@@ -204,7 +205,7 @@ const props = defineProps({
   profile: { type: Object, default: null }
 });
 
-const emit = defineEmits(["updated", "back", "deleted"]);
+const emit = defineEmits(["updated", "back", "deleted", "logout"]);
 
 const form = ref({
   name: "",

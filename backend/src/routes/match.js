@@ -8,8 +8,18 @@ const {
 } = require("../services/verification-workflow");
 
 const router = express.Router();
+const memberRoleWhere = {
+  [Op.or]: [{ role: "user" }, { role: null }]
+};
 
 const isPhotoVerified = (user) => !!user?.verified_photo;
+
+const andWhere = (...clauses) => {
+  const filtered = clauses.filter(Boolean);
+  if (filtered.length === 0) return {};
+  if (filtered.length === 1) return filtered[0];
+  return { [Op.and]: filtered };
+};
 
 const upsertLike = async (fromUserId, toUserId, status) => {
   const existing = await models.Like.findOne({
@@ -54,12 +64,12 @@ router.post("/like", auth, async (req, res) => {
   }
 
   const target = await models.User.findOne({
-    where: {
+    where: andWhere(memberRoleWhere, {
       id: userId,
       verified: true,
       verified_photo: true,
       suspended: { [Op.ne]: true }
-    }
+    })
   });
   if (!target) {
     return res.status(404).json({ error: "User not found" });
@@ -123,12 +133,12 @@ router.post("/superlike", auth, async (req, res) => {
   }
 
   const target = await models.User.findOne({
-    where: {
+    where: andWhere(memberRoleWhere, {
       id: userId,
       verified: true,
       verified_photo: true,
       suspended: { [Op.ne]: true }
-    }
+    })
   });
   if (!target) {
     return res.status(404).json({ error: "User not found" });
@@ -213,9 +223,11 @@ router.get("/list", auth, async (req, res) => {
 
   const payload = await Promise.all(matches.map(async (match) => {
     const otherId = String(match.user1_id) === String(req.user.id) ? match.user2_id : match.user1_id;
-    const user = await models.User.findByPk(otherId, {
+    const user = await models.User.findOne({
+      where: andWhere(memberRoleWhere, { id: otherId }),
       attributes: ["id", "name", "gender", "location", "birthdate", "photos"]
     });
+    if (!user) return null;
     const lastMessage = await models.Message.findOne({
       where: { match_id: match.id },
       order: [["created_at", "DESC"]],
@@ -241,10 +253,12 @@ router.get("/list", auth, async (req, res) => {
     };
   }));
 
-  const newMatches = payload
+  const visiblePayload = payload.filter(Boolean);
+
+  const newMatches = visiblePayload
     .filter((item) => !item.has_messages)
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  const conversations = payload
+  const conversations = visiblePayload
     .filter((item) => item.has_messages)
     .sort((a, b) => new Date(b.last_message_at) - new Date(a.last_message_at));
 
@@ -273,7 +287,8 @@ router.get("/likes", auth, async (req, res) => {
   });
 
   const users = await Promise.all(likes.map(async (row) => {
-    const user = await models.User.findByPk(row.from_user_id, {
+    const user = await models.User.findOne({
+      where: andWhere(memberRoleWhere, { id: row.from_user_id }),
       attributes: ["id", "name", "gender", "location", "birthdate", "photos"]
     });
     return user ? { ...user.toJSON(), id: user.id, photos: user.photos || [] } : null;
@@ -321,7 +336,8 @@ router.get("/liked-me", auth, async (req, res) => {
     });
     if (hasMatch) return null;
 
-    const user = await models.User.findByPk(row.from_user_id, {
+    const user = await models.User.findOne({
+      where: andWhere(memberRoleWhere, { id: row.from_user_id }),
       attributes: ["id", "name", "gender", "location", "birthdate", "photos", "verified_photo"]
     });
     if (!user) return null;

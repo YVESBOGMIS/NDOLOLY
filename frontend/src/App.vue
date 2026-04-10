@@ -58,6 +58,23 @@
         Nouveau message de {{ toast.fromName }}
       </div>
 
+      <div v-if="actionToast.visible" class="toast" @click="actionToast.visible = false">
+        {{ actionToast.message }}
+      </div>
+
+      <div v-if="verificationGateOpen" class="modal" @click.self="verificationGateOpen = false">
+        <div class="card">
+          <h3>Verification requise</h3>
+          <p class="muted" style="margin-top: 6px;">
+            Vous devez verifier votre photo de profil avant de liker, super liker ou passer.
+          </p>
+          <div class="actions" style="margin-top: 14px;">
+            <button class="button secondary" type="button" @click="verificationGateOpen = false">Plus tard</button>
+            <button class="button" type="button" @click="goToProfileForVerification">Ouvrir mon profil</button>
+          </div>
+        </div>
+      </div>
+
       <main :class="['layout', { 'layout-mobile-encounters': current === 'encounters' && !reverificationLocked }]">
         <Encounters
           v-if="!reverificationLocked && current === 'encounters'"
@@ -116,6 +133,7 @@
           :profile="user"
           @updated="reloadProfile"
           @deleted="logout"
+          @logout="logout"
           @back="current = 'encounters'"
         />
       </main>
@@ -196,6 +214,8 @@ const activeMatch = ref(null);
 const messages = ref([]);
 const unreadCount = ref(0);
 const toast = ref({ visible: false, fromName: "" });
+const actionToast = ref({ visible: false, message: "" });
+const verificationGateOpen = ref(false);
 const selectedProfile = ref(null);
 const profileLoading = ref(false);
 const authRoute = ref(window.location.pathname || "/login");
@@ -542,21 +562,40 @@ const isVerificationRequiredError = (err) => {
   return status === 403 && (required || /profile photo verification required/i.test(message));
 };
 
+const showActionToast = (message) => {
+  actionToast.value = { visible: true, message: String(message || "") };
+  setTimeout(() => {
+    actionToast.value.visible = false;
+  }, 3000);
+};
+
+const goToProfileForVerification = () => {
+  verificationGateOpen.value = false;
+  current.value = "profile";
+};
+
 const promptVerificationRequired = () => {
-  const confirmed = window.confirm(
-    "Vous devez verifier votre profil photo avant de liker, super liker ou passer. Ouvrir votre profil maintenant ?"
-  );
-  if (confirmed) {
-    current.value = "profile";
+  verificationGateOpen.value = true;
+};
+
+const ensureCanInteract = async () => {
+  if (user.value?.verified_photo) return true;
+  try {
+    const { data } = await api.get(`/profile/verification-status?ts=${Date.now()}`);
+    if (data?.status === "approved") {
+      user.value = { ...(user.value || {}), verified_photo: true };
+      return true;
+    }
+  } catch {
+    // ignore
   }
+  promptVerificationRequired();
+  return false;
 };
 
 const handleLike = async (profile) => {
   if (!profile?.id) return;
-  if (!user.value?.verified_photo) {
-    promptVerificationRequired();
-    return;
-  }
+  if (!(await ensureCanInteract())) return;
   try {
     const { data } = await api.post("/match/like", { userId: profile.id, action: "like" });
     discover.value = discover.value.filter((p) => p.id !== profile.id);
@@ -573,16 +612,13 @@ const handleLike = async (profile) => {
       promptVerificationRequired();
       return;
     }
-    window.alert(err?.response?.data?.error || err?.message || "Impossible d'envoyer le like.");
+    showActionToast(err?.response?.data?.error || err?.message || "Impossible d'envoyer le like.");
   }
 };
 
 const handleSuperlike = async (profile) => {
   if (!profile?.id) return;
-  if (!user.value?.verified_photo) {
-    promptVerificationRequired();
-    return;
-  }
+  if (!(await ensureCanInteract())) return;
   try {
     const { data } = await api.post("/match/superlike", { userId: profile.id });
     discover.value = discover.value.filter((p) => p.id !== profile.id);
@@ -598,16 +634,13 @@ const handleSuperlike = async (profile) => {
       promptVerificationRequired();
       return;
     }
-    window.alert(err?.response?.data?.error || err?.message || "Impossible d'envoyer le super like.");
+    showActionToast(err?.response?.data?.error || err?.message || "Impossible d'envoyer le super like.");
   }
 };
 
 const handlePass = async (profile) => {
   if (!profile?.id) return;
-  if (!user.value?.verified_photo) {
-    promptVerificationRequired();
-    return;
-  }
+  if (!(await ensureCanInteract())) return;
   try {
     await api.post("/match/like", { userId: profile.id, action: "dislike" });
     discover.value = discover.value.filter((p) => p.id !== profile.id);
@@ -616,7 +649,7 @@ const handlePass = async (profile) => {
       promptVerificationRequired();
       return;
     }
-    window.alert(err?.response?.data?.error || err?.message || "Impossible de passer ce profil.");
+    showActionToast(err?.response?.data?.error || err?.message || "Impossible de passer ce profil.");
   }
 };
 
@@ -707,10 +740,7 @@ const startChatWithProfile = async (profile) => {
     await selectMatch(existing);
     return;
   }
-  if (!user.value?.verified_photo) {
-    promptVerificationRequired();
-    return;
-  }
+  if (!(await ensureCanInteract())) return;
   try {
     const { data } = await api.post("/match/like", { userId: profile.id, action: "like" });
     if (data.match) {
@@ -727,7 +757,7 @@ const startChatWithProfile = async (profile) => {
       promptVerificationRequired();
       return;
     }
-    window.alert(err?.response?.data?.error || err?.message || "Impossible de demarrer cette conversation.");
+    showActionToast(err?.response?.data?.error || err?.message || "Impossible de demarrer cette conversation.");
   }
 };
 

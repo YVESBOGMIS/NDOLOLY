@@ -12,7 +12,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { api } from '@/lib/api';
-import { computeAge, resolvePhoto } from '@/lib/utils';
+import { computeAge, resolvePhoto, sanitizePublicProfile } from '@/lib/utils';
 import BrandMark from '@/components/BrandMark';
 
 export default function UserProfileScreen() {
@@ -25,7 +25,7 @@ export default function UserProfileScreen() {
   const load = async () => {
     try {
       const data = await api.get(`/profile/user/${id}`);
-      setProfile(data);
+      setProfile(sanitizePublicProfile(data));
     } catch (err) {
       Alert.alert('Erreur', 'Profil introuvable');
     }

@@ -8,6 +8,13 @@ router.post("/block", auth, async (req, res) => {
   const { userId } = req.body || {};
   if (!userId) return res.status(400).json({ error: "userId required" });
 
+  const target = await models.User.findByPk(userId, {
+    attributes: ["id", "role"]
+  });
+  if (!target || target.role === "admin") {
+    return res.status(404).json({ error: "User not found" });
+  }
+
   await models.Block.findOrCreate({
     where: { blocker_id: req.user.id, blocked_id: userId },
     defaults: {
@@ -23,6 +30,13 @@ router.post("/block", auth, async (req, res) => {
 router.post("/report", auth, async (req, res) => {
   const { userId, reason } = req.body || {};
   if (!userId || !reason) return res.status(400).json({ error: "userId and reason required" });
+
+  const target = await models.User.findByPk(userId, {
+    attributes: ["id", "role"]
+  });
+  if (!target || target.role === "admin") {
+    return res.status(404).json({ error: "User not found" });
+  }
 
   await models.Report.create({
     reporter_id: req.user.id,

@@ -20,13 +20,26 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-const getMatch = (matchId, userId) => {
-  return models.Match.findOne({
+const getMatch = async (matchId, userId, role) => {
+  const match = await models.Match.findOne({
     where: {
       id: matchId,
       [Op.or]: [{ user1_id: userId }, { user2_id: userId }]
     }
   });
+  if (!match) return null;
+
+  if (role !== "admin") {
+    const otherUserId = String(match.user1_id) === String(userId) ? match.user2_id : match.user1_id;
+    const otherUser = await models.User.findByPk(otherUserId, {
+      attributes: ["id", "role"]
+    });
+    if (!otherUser || otherUser.role === "admin") {
+      return null;
+    }
+  }
+
+  return match;
 };
 
 const toMessagePayload = (message) => {
@@ -58,7 +71,7 @@ const emitMessageStatus = (req, message) => {
 
 router.get("/:matchId", auth, async (req, res) => {
   const matchId = req.params.matchId;
-  const match = await getMatch(matchId, req.user.id);
+  const match = await getMatch(matchId, req.user.id, req.user.role);
   if (!match) return res.status(404).json({ error: "Match not found" });
 
   const messages = await models.Message.findAll({
@@ -71,7 +84,7 @@ router.get("/:matchId", auth, async (req, res) => {
 
 router.post("/:matchId", auth, async (req, res) => {
   const matchId = req.params.matchId;
-  const match = await getMatch(matchId, req.user.id);
+  const match = await getMatch(matchId, req.user.id, req.user.role);
   if (!match) return res.status(404).json({ error: "Match not found" });
 
   const { content } = req.body || {};
@@ -99,7 +112,7 @@ router.post("/:matchId", auth, async (req, res) => {
 
 router.post("/:matchId/image", auth, upload.single("image"), async (req, res) => {
   const matchId = req.params.matchId;
-  const match = await getMatch(matchId, req.user.id);
+  const match = await getMatch(matchId, req.user.id, req.user.role);
   if (!match) return res.status(404).json({ error: "Match not found" });
   if (!req.file) return res.status(400).json({ error: "No file" });
 
@@ -127,7 +140,7 @@ router.post("/:matchId/image", auth, upload.single("image"), async (req, res) =>
 router.post("/:matchId/audio", auth, upload.any(), async (req, res) => {
   try {
     const matchId = req.params.matchId;
-    const match = await getMatch(matchId, req.user.id);
+    const match = await getMatch(matchId, req.user.id, req.user.role);
     if (!match) return res.status(404).json({ error: "Match not found" });
 
     const file = req.file || (Array.isArray(req.files) ? req.files[0] : null);
@@ -168,7 +181,7 @@ router.post("/:matchId/audio", auth, upload.any(), async (req, res) => {
 
 router.post("/:matchId/received", auth, async (req, res) => {
   const matchId = req.params.matchId;
-  const match = await getMatch(matchId, req.user.id);
+  const match = await getMatch(matchId, req.user.id, req.user.role);
   if (!match) return res.status(404).json({ error: "Match not found" });
 
   const messageId = req.body?.messageId;
@@ -196,7 +209,7 @@ router.post("/:matchId/received", auth, async (req, res) => {
 
 router.post("/:matchId/read", auth, async (req, res) => {
   const matchId = req.params.matchId;
-  const match = await getMatch(matchId, req.user.id);
+  const match = await getMatch(matchId, req.user.id, req.user.role);
   if (!match) return res.status(404).json({ error: "Match not found" });
 
   const messageId = req.body?.messageId;
@@ -225,7 +238,7 @@ router.post("/:matchId/read", auth, async (req, res) => {
 
 router.post("/:matchId/listened", auth, async (req, res) => {
   const matchId = req.params.matchId;
-  const match = await getMatch(matchId, req.user.id);
+  const match = await getMatch(matchId, req.user.id, req.user.role);
   if (!match) return res.status(404).json({ error: "Match not found" });
 
   const messageId = req.body?.messageId;

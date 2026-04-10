@@ -297,7 +297,7 @@ port=3306
 database=loveconnect
 user=root
 ```
-
+ 
 La connexion est definie dans [backend/src/db.js](C:/Users/YVES%20BOGMIS/Desktop/loveconnect/backend/src/db.js). Tu peux aussi utiliser `DATABASE_URL`.
 
 ## 11. Creer un compte administrateur

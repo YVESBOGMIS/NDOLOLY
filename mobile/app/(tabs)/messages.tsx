@@ -21,7 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import { api } from '@/lib/api';
-import { resolvePhoto } from '@/lib/utils';
+import { resolvePhoto, sanitizePublicMatches } from '@/lib/utils';
 import BrandMark from '@/components/BrandMark';
 import { connectSocket, setActiveMatchId } from '@/lib/realtime';
 
@@ -99,7 +99,7 @@ export default function MessagesScreen() {
   const loadMatches = useCallback(async () => {
     try {
       const data = await api.get('/match/list');
-      setMatches(data || []);
+      setMatches(sanitizePublicMatches(data || []));
     } catch (err) {
       Alert.alert('Erreur', 'Impossible de charger les conversations');
     }

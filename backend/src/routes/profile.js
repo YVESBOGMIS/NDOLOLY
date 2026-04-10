@@ -21,6 +21,9 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 const allowedReligions = new Set(["catholique", "protestant", "musulman"]);
+const memberRoleWhere = {
+  [Op.or]: [{ role: "user" }, { role: null }]
+};
 const CITY_OPTIONS = [
   "Bafang",
   "Bafia",
@@ -222,6 +225,13 @@ const serializeVerification = (row) => {
 };
 
 const toPlainList = (rows) => rows.map((row) => (row?.toJSON ? row.toJSON() : row));
+
+const andWhere = (...clauses) => {
+  const filtered = clauses.filter(Boolean);
+  if (filtered.length === 0) return {};
+  if (filtered.length === 1) return filtered[0];
+  return { [Op.and]: filtered };
+};
 
 router.get("/me", auth, async (req, res) => {
   const [user, verification] = await Promise.all([
@@ -532,12 +542,12 @@ router.get("/discover", auth, async (req, res) => {
     models.Block.findAll({ where: { blocked_id: req.user.id }, attributes: ["blocker_id"] }),
     models.Like.findAll({ where: { from_user_id: req.user.id }, attributes: ["to_user_id"] }),
     models.User.findAll({
-      where: {
+      where: andWhere(memberRoleWhere, {
         id: { [Op.ne]: req.user.id },
         verified: true,
         verified_photo: true,
         suspended: { [Op.ne]: true }
-      }
+      })
     })
   ]);
 
@@ -689,6 +699,11 @@ router.get("/user/:id", auth, async (req, res) => {
   const viewer = viewerRecord.toJSON();
   const target = targetRecord.toJSON();
 
+  const targetIsAdmin = target.role === "admin";
+  if (targetIsAdmin && String(target.id) !== String(req.user.id) && req.user.role !== "admin") {
+    return res.status(404).json({ error: "User not found" });
+  }
+
   if (String(target.id) !== String(req.user.id) && (!target.verified || !target.verified_photo || target.suspended)) {
     return res.status(404).json({ error: "User not found" });
   }
@@ -707,7 +722,7 @@ router.get("/user/:id", auth, async (req, res) => {
       }
     });
 
-    if (!existing && !(viewer.premium && viewer.incognito_mode)) {
+    if (!existing && req.user.role !== "admin" && !(viewer.premium && viewer.incognito_mode)) {
       await models.ProfileView.create({
         viewer_id: req.user.id,
         viewed_user_id: target.id,
@@ -757,7 +772,7 @@ router.get("/views", auth, async (req, res) => {
   const viewersRows = viewerIds.length === 0
     ? []
     : await models.User.findAll({
-      where: { id: { [Op.in]: viewerIds } },
+      where: andWhere(memberRoleWhere, { id: { [Op.in]: viewerIds } }),
       attributes: ["id", "name", "location", "photos", "verified_photo"]
     });
   const viewerMap = new Map(toPlainList(viewersRows).map((user) => [String(user.id), user]));
@@ -796,12 +811,12 @@ router.get("/nearby", auth, async (req, res) => {
 
   const [usersRows, likedRows, matchRowsRecords] = await Promise.all([
     models.User.findAll({
-      where: {
+      where: andWhere(memberRoleWhere, {
         id: { [Op.ne]: req.user.id },
         verified: true,
         verified_photo: true,
         suspended: { [Op.ne]: true }
-      }
+      })
     }),
     models.Like.findAll({
       where: { from_user_id: req.user.id },

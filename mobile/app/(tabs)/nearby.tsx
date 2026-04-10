@@ -7,7 +7,7 @@ import * as Location from 'expo-location';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import { api } from '@/lib/api';
-import { resolvePhoto, computeAge } from '@/lib/utils';
+import { resolvePhoto, computeAge, sanitizePublicProfiles } from '@/lib/utils';
 import BrandMark from '@/components/BrandMark';
 import { isVerificationRequiredError, showVerificationRequiredPrompt } from '@/lib/verification-gate';
 
@@ -35,7 +35,7 @@ export default function NearbyScreen() {
         api.get('/profile/nearby'),
         api.get(`/profile/verification-status?ts=${Date.now()}`),
       ]);
-      setProfiles(data || []);
+      setProfiles(sanitizePublicProfiles(data || []));
       setVerificationStatus(statusData?.status || 'none');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Impossible de charger les profils proches';
