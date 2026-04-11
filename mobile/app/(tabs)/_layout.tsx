@@ -8,11 +8,13 @@ import { useClientOnlyValue } from '@/components/useClientOnlyValue';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { sanitizePublicMatches } from '@/lib/utils';
+import { subscribeActiveMatchId } from '@/lib/realtime';
 
 export default function TabLayout() {
   const { token, loading } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
   const [reverificationRequired, setReverificationRequired] = useState(false);
+  const [activeChatMatchId, setActiveChatMatchId] = useState<string | null>(null);
   const router = useRouter();
   const segments = useSegments();
   const insets = useSafeAreaInsets();
@@ -76,9 +78,36 @@ export default function TabLayout() {
     }
   }, [reverificationRequired, segments, router]);
 
+  useEffect(() => {
+    return subscribeActiveMatchId(setActiveChatMatchId);
+  }, []);
+
   return (
     <Tabs
-      screenOptions={{
+      screenOptions={({ route }) => {
+        const currentTab = segments[1];
+        const hideTabBar = currentTab === 'messages' && !!activeChatMatchId;
+
+        const baseTabBarStyle = {
+          position: 'absolute' as const,
+          left: 12,
+          right: 12,
+          bottom: tabBarBottom,
+          height: tabBarHeight,
+          paddingBottom: tabBarPaddingBottom,
+          paddingTop: 7,
+          paddingHorizontal: 8,
+          backgroundColor: 'rgba(6,6,8,0.96)',
+          borderTopWidth: 0,
+          borderRadius: 22,
+          elevation: 20,
+          shadowColor: '#000',
+          shadowOpacity: 0.32,
+          shadowRadius: 18,
+          shadowOffset: { width: 0, height: -4 },
+        };
+
+        return {
         tabBarActiveTintColor: '#fff',
         tabBarInactiveTintColor: 'rgba(255,255,255,0.78)',
         tabBarShowLabel: true,
@@ -105,27 +134,13 @@ export default function TabLayout() {
           justifyContent: 'center',
           paddingVertical: 8,
         },
-        tabBarStyle: {
-          position: 'absolute',
-          left: 12,
-          right: 12,
-          bottom: tabBarBottom,
-          height: tabBarHeight,
-          paddingBottom: tabBarPaddingBottom,
-          paddingTop: 7,
-          paddingHorizontal: 8,
-          backgroundColor: 'rgba(6,6,8,0.96)',
-          borderTopWidth: 0,
-          borderRadius: 22,
-          elevation: 20,
-          shadowColor: '#000',
-          shadowOpacity: 0.32,
-          shadowRadius: 18,
-          shadowOffset: { width: 0, height: -4 },
-        },
+        tabBarStyle: hideTabBar
+          ? { display: 'none' as const }
+          : baseTabBarStyle,
         // Disable the static render of the header on web
         // to prevent a hydration error in React Navigation v6.
         headerShown: useClientOnlyValue(false, true),
+      };
       }}>
       <Tabs.Screen
         name="encounters"

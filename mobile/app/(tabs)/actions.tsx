@@ -21,6 +21,22 @@ export default function ActionsScreen() {
   const router = useRouter();
   const canInteract = verificationStatus === 'approved';
 
+  const dedupeProfiles = (items: any[]) => {
+    const seen = new Set<string>();
+    const out: any[] = [];
+    for (const item of items || []) {
+      const id = String(item?.id || item?._id || '');
+      if (!id) {
+        out.push(item);
+        continue;
+      }
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push(item);
+    }
+    return out;
+  };
+
   const syncVerificationStatus = async () => {
     const statusData = await api.get(`/profile/verification-status?ts=${Date.now()}`);
     const nextStatus = statusData?.status || 'none';
@@ -35,10 +51,10 @@ export default function ActionsScreen() {
         api.get(`/profile/verification-status?ts=${Date.now()}`),
       ]);
       setVerificationStatus(statusData?.status || 'none');
-      setViews(sanitizePublicProfiles(viewsData || []));
+      setViews(dedupeProfiles(sanitizePublicProfiles(viewsData || [])));
       try {
         const likesData = await api.get('/match/liked-me');
-        setLikes(sanitizePublicProfiles(likesData || []));
+        setLikes(dedupeProfiles(sanitizePublicProfiles(likesData || [])));
         setLikesPremiumRequired(false);
       } catch (err) {
         if (err instanceof Error && /premium required/i.test(err.message)) {
@@ -88,9 +104,26 @@ export default function ActionsScreen() {
       }
     }
     try {
-      await api.post('/match/like', { userId: profile.id, action: 'like' });
+      const data = await api.post('/match/like', { userId: profile.id, action: 'like' });
       setViews((prev) => prev.filter((p) => p.id !== profile.id));
       await load();
+
+      const matchId = String(data?.match?.id || data?.match?._id || '');
+      const matchCreated = data?.match_created === true;
+      if (matchId && matchCreated) {
+        const name = String(profile?.name || 'ce profil');
+        Alert.alert(
+          "C'est un match",
+          `Toi et ${name}, vous vous plaisez. Envoie-lui un message pour briser la glace.`,
+          [
+            { text: 'Continuer', style: 'cancel' },
+            {
+              text: 'Envoyer un message',
+              onPress: () => router.push({ pathname: '/(tabs)/messages', params: { matchId } }),
+            },
+          ],
+        );
+      }
     } catch (err) {
       if (isVerificationRequiredError(err)) {
         await syncVerificationStatus().catch(() => {});
@@ -145,8 +178,8 @@ export default function ActionsScreen() {
             </View>
           ) : null}
           <View style={styles.cards}>
-            {likes.map((profile) => (
-              <View key={profile.id} style={[styles.card, { backgroundColor: colors.card }]}>
+            {likes.map((profile, idx) => (
+              <View key={`${String(profile?.id || profile?._id || 'like')}-${idx}`} style={[styles.card, { backgroundColor: colors.card }]}>
                 <Image
                   source={{ uri: resolvePhoto(profile.photos?.[0]) || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=600&q=80' }}
                   style={styles.cardImage}
@@ -169,8 +202,8 @@ export default function ActionsScreen() {
         <>
           <Text style={[styles.title, { color: colors.text }]}>Vues</Text>
           <View style={styles.cards}>
-            {views.map((profile) => (
-              <View key={profile.id} style={[styles.card, { backgroundColor: colors.card }]}>
+            {views.map((profile, idx) => (
+              <View key={`${String(profile?.id || profile?._id || 'view')}-${idx}`} style={[styles.card, { backgroundColor: colors.card }]}>
                 <Image
                   source={{ uri: resolvePhoto(profile.photos?.[0]) || 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=600&q=80' }}
                   style={styles.cardImage}

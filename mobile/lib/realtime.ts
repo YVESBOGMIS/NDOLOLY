@@ -5,6 +5,7 @@ import { API_BASE_URL } from './config';
 let socket: Socket | null = null;
 let connectedUserId: string | null = null;
 let activeMatchId: string | null = null;
+const activeMatchListeners = new Set<(id: string | null) => void>();
 
 export function connectSocket(userId: string) {
   if (!userId) return null;
@@ -32,9 +33,27 @@ export function resetSocket() {
 
 export function setActiveMatchId(matchId: string | null) {
   activeMatchId = matchId || null;
+  activeMatchListeners.forEach((listener) => {
+    try {
+      listener(activeMatchId);
+    } catch {
+      // Ignore listener errors.
+    }
+  });
 }
 
 export function getActiveMatchId() {
   return activeMatchId;
 }
 
+export function subscribeActiveMatchId(listener: (id: string | null) => void) {
+  activeMatchListeners.add(listener);
+  try {
+    listener(activeMatchId);
+  } catch {
+    // ignore
+  }
+  return () => {
+    activeMatchListeners.delete(listener);
+  };
+}

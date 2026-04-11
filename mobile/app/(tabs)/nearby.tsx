@@ -129,8 +129,25 @@ export default function NearbyScreen() {
       }
     }
     try {
-      await api.post('/match/like', { userId: profile.id, action: 'like' });
+      const data = await api.post('/match/like', { userId: profile.id, action: 'like' });
       setProfiles((prev) => prev.filter((p) => p.id !== profile.id));
+
+      const matchId = String(data?.match?.id || data?.match?._id || '');
+      const matchCreated = data?.match_created === true;
+      if (matchId && matchCreated) {
+        const name = String(profile?.name || 'ce profil');
+        Alert.alert(
+          "C'est un match",
+          `Toi et ${name}, vous vous plaisez. Envoie-lui un message pour briser la glace.`,
+          [
+            { text: 'Continuer', style: 'cancel' },
+            {
+              text: 'Envoyer un message',
+              onPress: () => router.push({ pathname: '/(tabs)/messages', params: { matchId } }),
+            },
+          ],
+        );
+      }
     } catch (err) {
       if (isVerificationRequiredError(err)) {
         await syncVerificationStatus().catch(() => {});

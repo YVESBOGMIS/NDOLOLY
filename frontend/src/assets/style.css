@@ -1162,6 +1162,281 @@ input, select, textarea {
   margin-bottom: 16px;
 }
 
+.messages-screen-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.messages-block-title {
+  font-weight: 700;
+  margin: 10px 0 8px 0;
+  color: var(--ink);
+}
+
+.thread-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.thread-row {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(26, 26, 29, 0.10);
+  cursor: pointer;
+  width: 100%;
+}
+
+.thread-avatar img {
+  width: 54px;
+  height: 54px;
+  border-radius: 999px;
+  object-fit: cover;
+}
+
+.thread-dot {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #28c76f;
+  box-shadow: 0 0 0 3px #fff;
+}
+
+.thread-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.thread-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.thread-name {
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.verified-badge {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #2b7cff;
+}
+
+.verified-badge svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.thread-pill {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.pill-like {
+  background: rgba(255, 183, 3, 0.38);
+  color: #6a4a00;
+}
+
+.pill-turn {
+  background: #12131a;
+  color: #fff;
+}
+
+.thread-snippet {
+  color: rgba(26, 26, 29, 0.62);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.match-strip-mobile .match-chip {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  min-width: 74px;
+}
+
+.match-strip-mobile .match-chip img {
+  width: 66px;
+  height: 66px;
+  border-radius: 999px;
+  margin-bottom: 0;
+}
+
+.match-strip-mobile .match-chip-label {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  text-align: center;
+  color: var(--ink);
+}
+
+.avatar-round {
+  border-radius: 999px;
+}
+
+.avatar-round img {
+  border-radius: 999px;
+}
+
+.chip-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px #fff;
+}
+
+.verified-mini {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+}
+
+.verified-mini svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.like-chip-box {
+  width: 66px;
+  height: 66px;
+  border-radius: 22px;
+  border: 2px solid rgba(255, 183, 3, 0.9);
+  background: rgba(255, 183, 3, 0.10);
+  display: grid;
+  place-items: center;
+}
+
+.like-chip-count {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: rgba(255, 183, 3, 0.28);
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  color: #231a00;
+}
+
+.like-chip-icon {
+  margin-top: 8px;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 183, 3, 0.95);
+}
+
+.like-chip-icon svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+
+.messages-action-pill {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  background: rgba(26, 26, 29, 0.06);
+  border-radius: 999px;
+}
+
+.messages-icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(26, 26, 29, 0.12);
+  background: #fff;
+  color: rgba(26, 26, 29, 0.68);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.messages-icon-btn svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+@media (max-width: 720px) {
+  .app-shell-mobile-messages .topbar {
+    display: none;
+  }
+
+  .layout-mobile-messages {
+    padding: 0;
+  }
+
+  .layout-mobile-messages .messages-view {
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 16px 16px calc(86px + env(safe-area-inset-bottom));
+  }
+
+  .messages-screen-head {
+    margin-bottom: 6px;
+  }
+
+  .messages-screen-title {
+    font-family: "Plus Jakarta Sans", sans-serif;
+    font-size: 32px;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+  }
+
+  .messages-block-title {
+    margin-top: 12px;
+    margin-bottom: 8px;
+    font-size: 14px;
+  }
+
+  .match-strip-mobile {
+    gap: 14px;
+    margin-bottom: 10px;
+  }
+}
 .match-chip {
   min-width: 90px;
   background: #fff;

@@ -239,8 +239,28 @@ export default function EncountersScreen() {
       }
     }
     try {
-      await api.post('/match/like', { userId: current.id, action: 'like' });
+      const data = await api.post('/match/like', { userId: current.id, action: 'like' });
       await markSeen(current.id);
+      const matchId = String(data?.match?.id || data?.match?._id || '');
+      const matchCreated = data?.match_created === true;
+      if (matchId && matchCreated) {
+        const name = String(current?.name || 'ce profil');
+        Alert.alert(
+          "C'est un match",
+          `Toi et ${name}, vous vous plaisez. Envoie-lui un message pour briser la glace.`,
+          [
+            { text: 'Continuer a swiper', style: 'cancel', onPress: () => advance().catch(() => {}) },
+            {
+              text: 'Envoyer un message',
+              onPress: () => {
+                advance().catch(() => {});
+                router.push({ pathname: '/(tabs)/messages', params: { matchId } });
+              },
+            },
+          ],
+        );
+        return;
+      }
       await advance();
     } catch (err) {
       if (isVerificationRequiredError(err)) {
@@ -289,8 +309,28 @@ export default function EncountersScreen() {
       }
     }
     try {
-      await api.post('/match/superlike', { userId: current.id });
+      const data = await api.post('/match/superlike', { userId: current.id });
       await markSeen(current.id);
+      const matchId = String(data?.match?.id || data?.match?._id || '');
+      const matchCreated = data?.match_created === true;
+      if (matchId && matchCreated) {
+        const name = String(current?.name || 'ce profil');
+        Alert.alert(
+          "C'est un match",
+          `Toi et ${name}, vous vous plaisez. Envoie-lui un message pour briser la glace.`,
+          [
+            { text: 'Continuer a swiper', style: 'cancel', onPress: () => advance().catch(() => {}) },
+            {
+              text: 'Envoyer un message',
+              onPress: () => {
+                advance().catch(() => {});
+                router.push({ pathname: '/(tabs)/messages', params: { matchId } });
+              },
+            },
+          ],
+        );
+        return;
+      }
       await advance();
     } catch (err) {
       if (isVerificationRequiredError(err)) {

@@ -33,7 +33,16 @@
         @go-login="goLogin"
       />
     </div>
-    <div v-else :class="['app-shell', { 'app-shell-mobile-encounters': current === 'encounters' && !reverificationLocked }]">
+    <div
+      v-else
+      :class="[
+        'app-shell',
+        {
+          'app-shell-mobile-encounters': current === 'encounters' && !reverificationLocked,
+          'app-shell-mobile-messages': current === 'messages' && !reverificationLocked
+        }
+      ]"
+    >
       <header class="topbar">
         <div class="topbar-mobile-head">
           <div class="mobile-screen-title">{{ currentNavLabel }}</div>
@@ -75,7 +84,20 @@
         </div>
       </div>
 
-      <main :class="['layout', { 'layout-mobile-encounters': current === 'encounters' && !reverificationLocked }]">
+      <div v-if="matchModal.visible" class="modal" @click.self="closeMatchModal">
+        <div class="card">
+          <h3>C'est un match</h3>
+          <p class="muted" style="margin-top: 6px;">
+            Toi et {{ matchModal.name }}, vous vous plaisez. Envoie-lui un message pour briser la glace.
+          </p>
+          <div class="actions" style="margin-top: 14px;">
+            <button class="button secondary" type="button" @click="continueSwiping">Continuer a swiper</button>
+            <button class="button" type="button" @click="goToMatchChat">Envoyer un message</button>
+          </div>
+        </div>
+      </div>
+
+      <main :class="['layout', { 'layout-mobile-encounters': current === 'encounters' && !reverificationLocked, 'layout-mobile-messages': current === 'messages' && !reverificationLocked }]">
         <Encounters
           v-if="!reverificationLocked && current === 'encounters'"
           :profiles="discover"
@@ -119,10 +141,12 @@
         <MessagesView
           v-if="!reverificationLocked && current === 'messages'"
           :matches="matches"
+          :likes-count="likesPremiumRequired ? null : likedMe.length"
           :active-match="activeMatch"
           :messages="messages"
           :me-id="user.id"
           @select="selectMatch"
+          @go="goToSection"
           @close="closeConversation"
           @send="sendMessage"
           @send-image="sendImage"
@@ -217,6 +241,7 @@ const unreadCount = ref(0);
 const toast = ref({ visible: false, fromName: "" });
 const actionToast = ref({ visible: false, message: "" });
 const verificationGateOpen = ref(false);
+const matchModal = ref({ visible: false, name: "", profileId: null, matchId: null });
 const selectedProfile = ref(null);
 const profileLoading = ref(false);
 const userProfileBackTarget = ref("encounters");
@@ -237,6 +262,7 @@ const currentNavLabel = computed(() => {
   return navItems.find((item) => item.key === current.value)?.title || "Swipe";
 });
 let geoWatchId = null;
+const recentMatchIds = new Set();
 
 const setRoute = (path) => {
   if (window.location.pathname === path) {
@@ -461,9 +487,24 @@ const bootstrap = async () => {
 
     startLocationWatch();
     const socket = connectSocket(user.value.id);
-    socket.on("match:new", () => {
-      loadMatches();
+    socket.on("match:new", async (payload) => {
+      const matchId = payload?.id || payload?._id;
+      if (matchId && recentMatchIds.has(String(matchId))) {
+        loadMatches();
+        loadLikes();
+        return;
+      }
+
+      const list = await loadMatches();
       loadLikes();
+      if (!matchId) return;
+      const created = list.find((item) => String(item?.id) === String(matchId));
+      if (created?.user) {
+        discover.value = discover.value.filter((p) => String(p.id) !== String(created.user.id));
+        nearby.value = nearby.value.filter((p) => String(p.id) !== String(created.user.id));
+        likedMe.value = likedMe.value.filter((p) => String(p.id) !== String(created.user.id));
+        showMatchModal(created.user, matchId);
+      }
     });
     socket.on("message:new", (message) => {
       const activeId = activeMatch.value?.id || activeMatch.value?._id;
@@ -580,6 +621,64 @@ const promptVerificationRequired = () => {
   verificationGateOpen.value = true;
 };
 
+const rememberRecentMatch = (matchId) => {
+  const id = matchId ? String(matchId) : "";
+  if (!id) return;
+  recentMatchIds.add(id);
+  setTimeout(() => {
+    recentMatchIds.delete(id);
+  }, 15000);
+};
+
+const showMatchModal = (profile, matchId = null) => {
+  rememberRecentMatch(matchId);
+  matchModal.value = {
+    visible: true,
+    name: profile?.name || "ce profil",
+    profileId: profile?.id || profile?._id || null,
+    matchId: matchId ? String(matchId) : null
+  };
+};
+
+const closeMatchModal = () => {
+  matchModal.value.visible = false;
+  matchModal.value.name = "";
+  matchModal.value.profileId = null;
+  matchModal.value.matchId = null;
+};
+
+const continueSwiping = () => {
+  closeMatchModal();
+  current.value = "encounters";
+};
+
+const goToMatchChat = async () => {
+  const matchId = matchModal.value.matchId;
+  const profileId = matchModal.value.profileId;
+  closeMatchModal();
+
+  if (matchId) {
+    const found = matches.value.find((m) => String(m.id || m._id) === String(matchId));
+    if (found) return selectMatch(found);
+  }
+  if (profileId) {
+    const existing = matches.value.find((m) => String(m.user?.id) === String(profileId));
+    if (existing) return selectMatch(existing);
+  }
+
+  const refreshed = await loadMatches().catch(() => []);
+  if (matchId) {
+    const found = (refreshed || []).find((m) => String(m.id || m._id) === String(matchId));
+    if (found) return selectMatch(found);
+  }
+  if (profileId) {
+    const existing = (refreshed || []).find((m) => String(m.user?.id) === String(profileId));
+    if (existing) return selectMatch(existing);
+  }
+
+  current.value = "messages";
+};
+
 const ensureCanInteract = async () => {
   if (user.value?.verified_photo) return true;
   try {
@@ -601,12 +700,13 @@ const handleLike = async (profile) => {
   try {
     const { data } = await api.post("/match/like", { userId: profile.id, action: "like" });
     discover.value = discover.value.filter((p) => p.id !== profile.id);
+    nearby.value = nearby.value.filter((p) => p.id !== profile.id);
     likedMe.value = likedMe.value.filter((p) => p.id !== profile.id);
     if (data.match) {
       await loadMatches();
       activeMatch.value = null;
-      if (current.value === "likes") {
-        current.value = "messages";
+      if (data.match_created) {
+        showMatchModal(profile, data.match?.id || data.match?._id);
       }
     }
   } catch (err) {
@@ -624,11 +724,12 @@ const handleSuperlike = async (profile) => {
   try {
     const { data } = await api.post("/match/superlike", { userId: profile.id });
     discover.value = discover.value.filter((p) => p.id !== profile.id);
+    nearby.value = nearby.value.filter((p) => p.id !== profile.id);
     if (data.match) {
       await loadMatches();
       activeMatch.value = null;
-      if (current.value === "likes") {
-        current.value = "messages";
+      if (data.match_created) {
+        showMatchModal(profile, data.match?.id || data.match?._id);
       }
     }
   } catch (err) {
@@ -752,11 +853,13 @@ const startChatWithProfile = async (profile) => {
     const { data } = await api.post("/match/like", { userId: profile.id, action: "like" });
     if (data.match) {
       await loadMatches();
-      const updated = matches.value.find((m) => String(m.user?.id) === String(profile.id));
-      if (updated) {
-        await selectMatch(updated);
+      likedMe.value = likedMe.value.filter((p) => p.id !== profile.id);
+      if (data.match_created) {
+        showMatchModal(profile, data.match?.id || data.match?._id);
         return;
       }
+      const updated = matches.value.find((m) => String(m.user?.id) === String(profile.id));
+      if (updated) return selectMatch(updated);
     }
     current.value = "messages";
   } catch (err) {

@@ -537,10 +537,16 @@ router.get("/discover", auth, async (req, res) => {
   if (!meRecord) return res.status(404).json({ error: "User not found" });
   const me = meRecord.toJSON();
 
-  const [blockedIdsRows, blockedByIdsRows, likedIdsRows, usersRows] = await Promise.all([
+  const [blockedIdsRows, blockedByIdsRows, likedIdsRows, matchRowsRecords, usersRows] = await Promise.all([
     models.Block.findAll({ where: { blocker_id: req.user.id }, attributes: ["blocked_id"] }),
     models.Block.findAll({ where: { blocked_id: req.user.id }, attributes: ["blocker_id"] }),
     models.Like.findAll({ where: { from_user_id: req.user.id }, attributes: ["to_user_id"] }),
+    models.Match.findAll({
+      where: {
+        [Op.or]: [{ user1_id: req.user.id }, { user2_id: req.user.id }]
+      },
+      attributes: ["user1_id", "user2_id"]
+    }),
     models.User.findAll({
       where: andWhere(memberRoleWhere, {
         id: { [Op.ne]: req.user.id },
@@ -554,6 +560,12 @@ router.get("/discover", auth, async (req, res) => {
   const blockedSet = new Set(blockedIdsRows.map((row) => String(row.blocked_id)));
   const blockedBySet = new Set(blockedByIdsRows.map((row) => String(row.blocker_id)));
   const likedSet = new Set(likedIdsRows.map((row) => String(row.to_user_id)));
+  const matchRows = toPlainList(matchRowsRecords);
+  const matchSet = new Set(
+    matchRows.map((row) =>
+      String(row.user1_id) === String(req.user.id) ? String(row.user2_id) : String(row.user1_id)
+    )
+  );
   const users = toPlainList(usersRows);
   const meInterests = me.interests || [];
 
@@ -615,6 +627,7 @@ router.get("/discover", auth, async (req, res) => {
     if (me.gender && user.gender && me.gender === user.gender) return false;
     if (blockedSet.has(String(user.id))) return false;
     if (blockedBySet.has(String(user.id))) return false;
+    if (matchSet.has(String(user.id))) return false;
 
     const age = computeAge(user.birthdate);
     if (age === null) return false;

@@ -231,7 +231,7 @@ router.get("/list", auth, async (req, res) => {
     const lastMessage = await models.Message.findOne({
       where: { match_id: match.id },
       order: [["created_at", "DESC"]],
-      attributes: ["created_at"]
+      attributes: ["created_at", "type", "content", "from_user_id", "to_user_id"]
     });
     const unreadCount = await models.Message.count({
       where: {
@@ -249,6 +249,7 @@ router.get("/list", auth, async (req, res) => {
       created_at: match.created_at,
       last_message_at: lastMessage?.created_at || match.created_at,
       has_messages: !!lastMessage,
+      last_message: lastMessage ? (lastMessage.toJSON ? lastMessage.toJSON() : lastMessage) : null,
       unread_count: unreadCount
     };
   }));

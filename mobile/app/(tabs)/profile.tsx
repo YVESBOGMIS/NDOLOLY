@@ -10,7 +10,7 @@ import {
   Image,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 
 import Colors from '@/constants/Colors';
@@ -32,6 +32,7 @@ export default function ProfileScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme];
   const { signOut } = useAuth();
+  const router = useRouter();
   const params = useLocalSearchParams<{ promptVerification?: string | string[] }>();
   const [profile, setProfile] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
@@ -42,6 +43,12 @@ export default function ProfileScreen() {
   const verificationPromptHandledRef = React.useRef<string | null>(null);
 
   const photos = useMemo(() => (profile?.photos || []).filter(Boolean), [profile]);
+
+  const openPreview = () => {
+    const id = profile?.id || profile?._id;
+    if (!id) return;
+    router.push(`/user/${id}`);
+  };
 
   const syncVerificationStatus = async () => {
     const statusData = await api.get(`/profile/verification-status?ts=${Date.now()}`);
@@ -370,6 +377,9 @@ export default function ProfileScreen() {
         />
         <Text style={[styles.name, { color: colors.text }]}>{profile.name} · {computeAge(profile.birthdate)}</Text>
         <Text style={[styles.sub, { color: colors.text }]}>{profile.location}</Text>
+        <Pressable style={styles.secondaryButton} onPress={openPreview}>
+          <Text style={styles.secondaryText}>Apercu</Text>
+        </Pressable>
         {profile?.reverification_required ? (
           <Text style={styles.lockedNotice}>
             Votre compte est bloque jusqu'a l'envoi d'une nouvelle verification photo.

@@ -17,6 +17,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
@@ -28,6 +30,13 @@ import { connectSocket, setActiveMatchId } from '@/lib/realtime';
 export default function MessagesScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme];
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  // The tab bar is rendered as an absolute, floating element in `(tabs)/_layout.tsx`.
+  // When chatting, ensure the composer is always above it (and above the safe-area).
+  const tabBarHeight = Platform.select({ ios: 64, android: 64, default: 64 }) ?? 64;
+  const tabBarBottom = Math.max(insets.bottom, 8);
+  const tabBarTopOffset = tabBarHeight + tabBarBottom;
   const [matches, setMatches] = useState<any[]>([]);
   const [activeMatch, setActiveMatch] = useState<any | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
@@ -39,8 +48,31 @@ export default function MessagesScreen() {
   const activeMatchRef = useRef<any | null>(null);
   const [listenedIds, setListenedIds] = useState<string[]>([]);
   const [lightboxUri, setLightboxUri] = useState<string | null>(null);
+  const [likesCount, setLikesCount] = useState<number>(0);
+  const params = useLocalSearchParams<{ matchId?: string | string[] }>();
+  const pendingMatchId = useMemo(() => {
+    const raw = params?.matchId;
+    if (Array.isArray(raw)) return String(raw[0] || '');
+    return String(raw || '');
+  }, [params?.matchId]);
+  const handledMatchIdRef = useRef<string | null>(null);
 
   const getMessageId = (msg: any) => String(msg?.id || msg?._id || msg?.message_id || '');
+  const dedupeByKey = useCallback(<T,>(list: T[], getKey: (item: T) => string) => {
+    const seen = new Set<string>();
+    const out: T[] = [];
+    for (const item of list) {
+      const key = getKey(item);
+      if (!key) {
+        out.push(item);
+        continue;
+      }
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(item);
+    }
+    return out;
+  }, []);
   const markAudioListened = useCallback(
     async (msg: any) => {
       const messageId = getMessageId(msg);
@@ -99,9 +131,23 @@ export default function MessagesScreen() {
   const loadMatches = useCallback(async () => {
     try {
       const data = await api.get('/match/list');
-      setMatches(sanitizePublicMatches(data || []));
+      const sanitized = sanitizePublicMatches(Array.isArray(data) ? data : []);
+      setMatches(dedupeByKey(sanitized, (m: any) => String(m?.id || m?._id || '')));
     } catch (err) {
       Alert.alert('Erreur', 'Impossible de charger les conversations');
+    }
+  }, [dedupeByKey]);
+
+  const loadLikesCount = useCallback(async () => {
+    try {
+      const data = await api.get('/match/liked-me');
+      if (Array.isArray(data)) {
+        setLikesCount(data.length);
+      } else {
+        setLikesCount(0);
+      }
+    } catch {
+      setLikesCount(0);
     }
   }, []);
 
@@ -110,14 +156,15 @@ export default function MessagesScreen() {
     const matchId = activeMatchRef.current.id;
     try {
       const data = await api.get(`/messages/${matchId}`);
-      setMessages(data || []);
+      const list = Array.isArray(data) ? data : [];
+      setMessages(dedupeByKey(list, (m: any) => getMessageId(m)));
       await api.post(`/messages/${matchId}/received`, {});
       await api.post(`/messages/${matchId}/read`, {});
       await loadMatches();
     } catch (err) {
       Alert.alert('Erreur', 'Impossible de rafraichir la conversation');
     }
-  }, [loadMatches]);
+  }, [dedupeByKey, loadMatches]);
 
   const getTargetUserId = useCallback(() => {
     const user = activeMatchRef.current?.user;
@@ -210,7 +257,8 @@ export default function MessagesScreen() {
   useEffect(() => {
     loadMatches();
     loadCurrentUser();
-  }, [loadMatches, loadCurrentUser]);
+    loadLikesCount();
+  }, [loadMatches, loadCurrentUser, loadLikesCount]);
 
   useEffect(() => {
     activeMatchRef.current = activeMatch;
@@ -283,11 +331,12 @@ export default function MessagesScreen() {
     };
   }, [currentUserId, loadMatches, upsertMessage]);
 
-  const selectMatch = async (match: any) => {
+  const selectMatch = useCallback(async (match: any) => {
     try {
       setActiveMatch(match);
       const data = await api.get(`/messages/${match.id}`);
-      setMessages(data || []);
+      const list = Array.isArray(data) ? data : [];
+      setMessages(dedupeByKey(list, (m: any) => getMessageId(m)));
       await api.post(`/messages/${match.id}/received`, {});
       await api.post(`/messages/${match.id}/read`, {});
       setMatches((prev) =>
@@ -298,7 +347,17 @@ export default function MessagesScreen() {
     } catch (err) {
       Alert.alert('Erreur', 'Impossible de charger les messages');
     }
-  };
+  }, [dedupeByKey]);
+
+  useEffect(() => {
+    const matchId = pendingMatchId;
+    if (!matchId) return;
+    if (handledMatchIdRef.current === matchId) return;
+    const found = matches.find((item) => String(item?.id || item?._id || '') === String(matchId));
+    if (!found) return;
+    handledMatchIdRef.current = matchId;
+    selectMatch(found);
+  }, [pendingMatchId, matches, selectMatch]);
 
   const sendMessage = async () => {
     if (!activeMatch || !text.trim()) return;
@@ -408,72 +467,140 @@ export default function MessagesScreen() {
   };
 
   const newMatches = useMemo(() => matches.filter((m) => !m.has_messages), [matches]);
-  const conversations = useMemo(() => matches.filter((m) => m.has_messages), [matches]);
+  const threads = useMemo(() => {
+    const list = Array.isArray(matches) ? [...matches] : [];
+    return list.sort((a, b) => {
+      const aTime = new Date(a?.last_message_at || a?.created_at || 0).getTime();
+      const bTime = new Date(b?.last_message_at || b?.created_at || 0).getTime();
+      return bTime - aTime;
+    });
+  }, [matches]);
+
+  const likesCountDisplay = useMemo(() => (likesCount > 99 ? '99+' : String(Math.max(0, likesCount || 0))), [likesCount]);
+
+  const shortName = useCallback((name: any) => {
+    const raw = String(name || '').trim();
+    if (!raw) return '';
+    const first = raw.split(/\s+/).filter(Boolean)[0] || raw;
+    return first.length > 10 ? `${first.slice(0, 10)}…` : first;
+  }, []);
+
+  const previewText = useCallback((match: any) => {
+    const last = match?.last_message;
+    if (last) {
+      if (last.type === 'image') return 'Photo';
+      if (last.type === 'audio') return 'Message vocal';
+      const content = String(last.content || '').trim();
+      return content || 'Message';
+    }
+    if (!match?.has_messages) return 'Activite recente, Matche des maintenant...';
+    return 'Discussion';
+  }, []);
 
   if (!activeMatch) {
     return (
-      <ScrollView style={[styles.container, { backgroundColor: colors.background }]}> 
-        <BrandMark />
-        <Text style={[styles.title, { color: colors.text }]}>Messages</Text>
+      <ScrollView
+        style={[styles.container, { backgroundColor: '#fff' }]}
+        contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 90 }}
+      >
+        <View style={styles.messagesHead}>
+          <Text style={styles.messagesTitle}>Messages</Text>
+          <View style={styles.messagesActionPill}>
+            <Pressable style={styles.iconBtn} accessibilityLabel="Securite">
+              <Ionicons name="shield-checkmark-outline" size={18} color="rgba(26,26,29,0.65)" />
+            </Pressable>
+            <Pressable style={styles.iconBtn} accessibilityLabel="Cle">
+              <Ionicons name="key-outline" size={18} color="rgba(26,26,29,0.65)" />
+            </Pressable>
+          </View>
+        </View>
 
-        <View style={styles.cards}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Nouveaux matchs</Text>
-          {newMatches.length > 0 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.matchRow}
-            >
-              {newMatches.map((item) => (
-                <Pressable
-                  key={`match-${item.id}`}
-                  style={[styles.matchChip, { backgroundColor: colors.card }]}
-                  onPress={() => selectMatch(item)}
-                >
+        <Text style={styles.blockTitle}>Nouveaux Matchs</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.matchStrip}>
+          <Pressable style={styles.likesTile} onPress={() => router.push('/(tabs)/actions')}>
+            <View style={styles.likesTileBox}>
+              <View style={styles.likesCountCircle}>
+                <Text style={styles.likesCountText}>{likesCountDisplay}</Text>
+              </View>
+            </View>
+            <Ionicons name="heart" size={18} color="rgba(255,183,3,0.95)" style={{ marginTop: 8 }} />
+            <Text style={styles.matchLabel}>Likes</Text>
+          </Pressable>
+
+          {newMatches.map((item) => (
+            <Pressable key={`match-${item.id}`} style={styles.matchChipRound} onPress={() => selectMatch(item)}>
+              <View style={styles.matchAvatarWrap}>
+                <Image
+                  source={{
+                    uri:
+                      resolvePhoto(item.user?.photos?.[0]) ||
+                      'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=400&q=80',
+                  }}
+                  style={styles.matchAvatarRound}
+                />
+                <View style={styles.newDot} />
+              </View>
+              <View style={styles.matchNameRow}>
+                <Text style={styles.matchLabel} numberOfLines={1}>
+                  {shortName(item.user?.name)}
+                </Text>
+                {item.user?.verified_photo ? (
+                  <Ionicons name="checkmark-circle" size={14} color="#2b7cff" />
+                ) : null}
+              </View>
+            </Pressable>
+          ))}
+        </ScrollView>
+
+        <Text style={[styles.blockTitle, { marginTop: 16 }]}>Messages</Text>
+        <View style={styles.threadList}>
+          {threads.map((item, idx) => {
+            const pill =
+              item.unread_count > 0 ? { text: 'A TON TOUR', style: styles.pillTurn } :
+              !item.has_messages ? { text: 'TA ENVOYE UN LIKE', style: styles.pillLike } :
+              null;
+            const pillTextStyle = item.unread_count > 0 ? styles.pillTextLight : !item.has_messages ? styles.pillTextDark : styles.pillTextLight;
+
+            return (
+              <Pressable
+                key={`${String(item?.id || item?._id || 'thread')}-${idx}`}
+                style={styles.threadRow}
+                onPress={() => selectMatch(item)}
+              >
+                <View style={styles.threadAvatarWrap}>
                   <Image
-                    source={{ uri: resolvePhoto(item.user?.photos?.[0]) || 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=400&q=80' }}
-                    style={styles.matchAvatar}
+                    source={{
+                      uri:
+                        resolvePhoto(item.user?.photos?.[0]) ||
+                        'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=400&q=80',
+                    }}
+                    style={styles.threadAvatar}
                   />
-                  <Text style={[styles.matchName, { color: colors.text }]} numberOfLines={1}>
-                    {item.user?.name}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          ) : (
-            <Text style={[styles.subtleText, { color: colors.text }]}>Aucun nouveau match.</Text>
-          )}
-
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Conversations</Text>
-          {conversations.length > 0 ? (
-            <View style={styles.conversationList}>
-              {conversations.map((item) => (
-                <Pressable
-                  key={item.id}
-                  style={[styles.card, { backgroundColor: colors.card }]}
-                  onPress={() => selectMatch(item)}
-                >
-                  <View style={styles.avatarWrap}>
-                    <Image
-                      source={{ uri: resolvePhoto(item.user?.photos?.[0]) || 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=400&q=80' }}
-                      style={styles.avatar}
-                    />
-                    {item.unread_count > 0 ? (
-                      <View style={styles.unreadBadge}>
-                        <Text style={styles.unreadText}>{item.unread_count > 9 ? '9+' : item.unread_count}</Text>
+                  {item.unread_count > 0 ? <View style={styles.threadDot} /> : null}
+                </View>
+                <View style={styles.threadMain}>
+                  <View style={styles.threadTop}>
+                    <View style={styles.threadNameRow}>
+                      <Text style={styles.threadName} numberOfLines={1}>
+                        {item.user?.name}
+                      </Text>
+                      {item.user?.verified_photo ? (
+                        <Ionicons name="checkmark-circle" size={16} color="#2b7cff" />
+                      ) : null}
+                    </View>
+                    {pill ? (
+                      <View style={[styles.pillBase, pill.style]}>
+                        <Text style={[styles.pillTextBase, pillTextStyle]}>{pill.text}</Text>
                       </View>
                     ) : null}
                   </View>
-                  <View>
-                    <Text style={[styles.cardTitle, { color: colors.text }]}>{item.user?.name}</Text>
-                    <Text style={[styles.cardSubtitle, { color: colors.text }]}>{item.user?.location}</Text>
-                  </View>
-                </Pressable>
-              ))}
-            </View>
-          ) : (
-            <Text style={[styles.subtleText, { color: colors.text }]}>Aucune conversation.</Text>
-          )}
+                  <Text style={styles.threadSnippet} numberOfLines={1}>
+                    {previewText(item)}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
         </View>
       </ScrollView>
     );
@@ -485,7 +612,14 @@ export default function MessagesScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
-      <View style={[styles.chatCard, { backgroundColor: colors.card }]}> 
+      <View
+        style={[
+          styles.chatCard,
+          { backgroundColor: colors.card },
+          // Keep the input row visible when the floating tab bar is present.
+          { paddingBottom: Math.max(12, tabBarTopOffset) },
+        ]}
+      >
         <View style={styles.chatHeader}>
           <Pressable onPress={() => setActiveMatch(null)}>
             <Text style={styles.backText}>Retour</Text>
@@ -510,7 +644,7 @@ export default function MessagesScreen() {
           contentContainerStyle={styles.messageListContent}
           keyboardShouldPersistTaps="handled"
         >
-          {messages.map((msg) => {
+          {messages.map((msg, idx) => {
             const isFromOther = String(msg.from_user_id) === String(activeMatch.user?.id);
             const isMine = currentUserId
               ? String(msg.from_user_id) === String(currentUserId)
@@ -521,7 +655,7 @@ export default function MessagesScreen() {
 
             return (
               <View
-                key={msg.id || msg._id}
+                key={`${String(messageId || msg?.id || msg?._id || 'msg')}-${idx}`}
                 style={[
                   styles.messageBubble,
                   isFromOther ? styles.messageThem : styles.messageMe,
@@ -783,86 +917,192 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+  messagesHead: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 12,
     marginBottom: 8,
   },
-  subtleText: {
-    fontSize: 12,
-    opacity: 0.6,
-    marginBottom: 12,
+  messagesTitle: {
+    fontSize: 34,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+    color: '#111',
   },
-  cards: {
-    gap: 12,
-  },
-  matchRow: {
-    gap: 10,
-    paddingBottom: 10,
-  },
-  matchChip: {
-    width: 84,
-    paddingVertical: 8,
-    borderRadius: 16,
-    alignItems: 'center',
-  },
-  matchAvatar: {
-    width: 54,
-    height: 54,
-    borderRadius: 16,
-    marginBottom: 6,
-  },
-  matchName: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  conversationList: {
-    gap: 12,
-  },
-  card: {
-    borderRadius: 18,
-    padding: 12,
+  messagesActionPill: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    gap: 8,
+    padding: 8,
+    backgroundColor: 'rgba(26,26,29,0.06)',
+    borderRadius: 999,
   },
-  avatarWrap: {
-    width: 56,
-    height: 56,
-  },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-  },
-  unreadBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    backgroundColor: '#ff5a5f',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+  iconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(26,26,29,0.12)',
+    backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  unreadText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '700',
+  blockTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#111',
+    marginTop: 10,
+    marginBottom: 8,
   },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+  matchStrip: {
+    gap: 14,
+    paddingBottom: 4,
   },
-  cardSubtitle: {
+  likesTile: {
+    width: 74,
+    alignItems: 'center',
+  },
+  likesTileBox: {
+    width: 66,
+    height: 66,
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: 'rgba(255,183,3,0.9)',
+    backgroundColor: 'rgba(255,183,3,0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  likesCountCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,183,3,0.28)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  likesCountText: {
+    fontWeight: '900',
+    color: '#231a00',
+  },
+  matchChipRound: {
+    width: 74,
+    alignItems: 'center',
+  },
+  matchAvatarWrap: {
+    width: 66,
+    height: 66,
+    borderRadius: 999,
+  },
+  matchAvatarRound: {
+    width: 66,
+    height: 66,
+    borderRadius: 999,
+  },
+  newDot: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 12,
+    height: 12,
+    borderRadius: 999,
+    backgroundColor: '#ff5a5f',
+    borderWidth: 3,
+    borderColor: '#fff',
+  },
+  matchLabel: {
+    marginTop: 8,
     fontSize: 12,
-    opacity: 0.6,
+    fontWeight: '700',
+    color: '#111',
+    textAlign: 'center',
+  },
+  matchNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    width: '100%',
+  },
+  threadList: {
+    flexDirection: 'column',
+  },
+  threadRow: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(26,26,29,0.10)',
+  },
+  threadAvatarWrap: {
+    width: 54,
+    height: 54,
+  },
+  threadAvatar: {
+    width: 54,
+    height: 54,
+    borderRadius: 999,
+  },
+  threadDot: {
+    position: 'absolute',
+    bottom: 4,
+    right: 4,
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: '#28c76f',
+    borderWidth: 3,
+    borderColor: '#fff',
+  },
+  threadMain: {
+    flex: 1,
+    minWidth: 0,
+    gap: 6,
+    paddingTop: 2,
+  },
+  threadTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  threadNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    minWidth: 0,
+  },
+  threadName: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#111',
+    flexShrink: 1,
+  },
+  threadSnippet: {
+    fontSize: 13,
+    color: 'rgba(26,26,29,0.62)',
+  },
+  pillBase: {
+    borderRadius: 999,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+  },
+  pillTurn: {
+    backgroundColor: '#12131a',
+  },
+  pillLike: {
+    backgroundColor: 'rgba(255,183,3,0.38)',
+  },
+  pillTextBase: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+  },
+  pillTextLight: {
+    color: '#fff',
+  },
+  pillTextDark: {
+    color: '#6a4a00',
   },
   chatCard: {
     borderRadius: 18,
