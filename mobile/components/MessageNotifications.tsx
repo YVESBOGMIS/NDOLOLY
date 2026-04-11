@@ -5,11 +5,13 @@ import * as Notifications from 'expo-notifications';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { connectSocket, getActiveMatchId, resetSocket } from '@/lib/realtime';
+import { playIncomingMessageSound } from '@/lib/notification-sound';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
     shouldSetBadge: false,
   }),
 });
@@ -98,6 +100,8 @@ export default function MessageNotifications() {
 
       const activeMatchId = getActiveMatchId();
       if (activeMatchId && matchId && String(activeMatchId) === String(matchId)) {
+        // In an active chat we don't want a system notification, but we still want an audible cue.
+        void playIncomingMessageSound();
         if (matchId) {
           try {
             await api.post(`/messages/${matchId}/read`, messageId ? { messageId } : {});
@@ -114,9 +118,9 @@ export default function MessageNotifications() {
             title: 'Nouveau message',
             body: getMessagePreview(payload),
             data: { matchId },
-            channelId: 'messages',
+            sound: 'default',
           },
-          trigger: null,
+          trigger: Platform.OS === 'android' ? { channelId: 'messages' } : null,
         });
       } catch {
         // Notifications can fail if permissions are denied.

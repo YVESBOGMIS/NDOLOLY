@@ -32,15 +32,22 @@ async function request(path: string, options: RequestOptions = {}) {
     headers['Content-Type'] = 'application/json';
   }
 
-  const res = await fetch(url, {
-    method: options.method || 'GET',
-    headers,
-    body: options.body
-      ? isFormData
-        ? options.body
-        : JSON.stringify(options.body)
-      : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: options.method || 'GET',
+      headers,
+      body: options.body
+        ? isFormData
+          ? options.body
+          : JSON.stringify(options.body)
+        : undefined,
+    });
+  } catch (err) {
+    // When fetch cannot reach the server (wrong IP, not on same Wi-Fi, firewall), RN throws a generic network error.
+    const msg = err instanceof Error ? err.message : String(err || '');
+    throw new Error(`Network request failed (${msg || 'unknown'}). API: ${API_BASE_URL}`);
+  }
 
   if (!res.ok) {
     const contentType = res.headers.get('content-type') || '';

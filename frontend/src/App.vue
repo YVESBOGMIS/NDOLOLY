@@ -147,6 +147,7 @@
           :me-id="user.id"
           @select="selectMatch"
           @go="goToSection"
+          @open-profile="openUserProfile"
           @close="closeConversation"
           @send="sendMessage"
           @send-image="sendImage"
@@ -240,6 +241,44 @@ const messages = ref([]);
 const unreadCount = ref(0);
 const toast = ref({ visible: false, fromName: "" });
 const actionToast = ref({ visible: false, message: "" });
+
+let webAudioCtx = null;
+let lastMessageSoundAt = 0;
+const playIncomingMessageSound = () => {
+  const now = Date.now();
+  if (now - lastMessageSoundAt < 700) return;
+  lastMessageSoundAt = now;
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!webAudioCtx) webAudioCtx = new Ctx();
+    const ctx = webAudioCtx;
+    if (ctx.state === "suspended") {
+      ctx.resume().catch(() => {});
+    }
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.2);
+    osc.onended = () => {
+      try {
+        osc.disconnect();
+        gain.disconnect();
+      } catch {
+        // ignore
+      }
+    };
+  } catch {
+    // Ignore browsers that block autoplay audio.
+  }
+};
 const verificationGateOpen = ref(false);
 const matchModal = ref({ visible: false, name: "", profileId: null, matchId: null });
 const selectedProfile = ref(null);
@@ -512,6 +551,9 @@ const bootstrap = async () => {
       const isActive = activeId && String(activeId) === String(matchId);
       void acknowledgeReceived(message).catch(() => {});
       if (isActive) {
+        if (String(message.from_user_id) !== String(user.value.id)) {
+          playIncomingMessageSound();
+        }
         appendMessageUnique(message);
         if (String(message.from_user_id) !== String(user.value.id)) {
           const messageId = message.id || message._id;
@@ -522,6 +564,7 @@ const bootstrap = async () => {
       }
 
       if (String(message.from_user_id) !== String(user.value.id)) {
+        playIncomingMessageSound();
         unreadCount.value += 1;
         toast.value = {
           visible: true,

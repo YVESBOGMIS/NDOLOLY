@@ -140,11 +140,13 @@
         <div v-else>
           <div class="chat-frame">
             <div class="chat-header">
-              <img :src="resolvePhoto(activeMatch.user?.photos?.[0]) || placeholder" alt="" />
-              <div>
-                <strong>{{ activeMatch.user?.name }}</strong>
-                <div class="muted">{{ activeMatch.user?.location }}</div>
-              </div>
+              <button class="chat-profile-link" type="button" @click="openActiveProfile">
+                <img :src="resolvePhoto(activeMatch.user?.photos?.[0]) || placeholder" alt="" />
+                <div class="chat-profile-meta">
+                  <strong>{{ activeMatch.user?.name }}</strong>
+                  <div class="muted">{{ activeMatch.user?.location }}</div>
+                </div>
+              </button>
               <button class="chat-close" type="button" aria-label="Fermer la conversation" @click="closeChat">
                 &times;
               </button>
@@ -228,7 +230,7 @@ const props = defineProps({
   meId: { type: [Number, String], default: null }
 });
 
-const emit = defineEmits(["select", "send", "sendImage", "sendAudio", "close", "go"]);
+const emit = defineEmits(["select", "send", "sendImage", "sendAudio", "close", "go", "openProfile"]);
 
 const text = ref("");
 const search = ref("");
@@ -270,6 +272,11 @@ const showActivePanel = computed(() => !isMobile.value || !!props.activeMatch);
 const select = (match) => emit("select", match);
 const closeChat = () => emit("close");
 const go = (section) => emit("go", section);
+const openActiveProfile = () => {
+  const user = props.activeMatch?.user;
+  if (!user) return;
+  emit("openProfile", user);
+};
 
 const send = () => {
   if (!text.value.trim()) return;

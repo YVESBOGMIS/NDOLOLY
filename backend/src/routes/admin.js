@@ -164,7 +164,8 @@ router.get("/users", async (req, res) => {
   const users = usersRows.map(toPlain);
   const userIds = users.map((item) => item.id);
 
-  const [reportRows, verificationRowsRaw] = await Promise.all([
+  const now = new Date();
+  const [reportRows, verificationRowsRaw, otpRowsRaw] = await Promise.all([
     userIds.length === 0
       ? []
       : models.Report.findAll({
@@ -176,6 +177,16 @@ router.get("/users", async (req, res) => {
       : models.PhotoVerification.findAll({
         where: { user_id: { [Op.in]: userIds } },
         order: [["submitted_at", "DESC"]]
+      }),
+    userIds.length === 0
+      ? []
+      : models.Otp.findAll({
+        where: {
+          user_id: { [Op.in]: userIds },
+          verified: false,
+          expires_at: { [Op.gt]: now }
+        },
+        order: [["created_at", "DESC"]]
       })
   ]);
 
@@ -198,15 +209,27 @@ router.get("/users", async (req, res) => {
     }
   }
 
+  const otpPendingMap = new Map();
+  for (const rowRecord of otpRowsRaw) {
+    const row = toPlain(rowRecord);
+    const key = String(row.user_id);
+    if (!otpPendingMap.has(key)) {
+      otpPendingMap.set(key, row);
+    }
+  }
+
   return res.json(users.map((user) => {
     const reportInfo = reportMap.get(String(user.id));
     const verificationInfo = verificationMap.get(String(user.id));
+    const pendingOtp = otpPendingMap.get(String(user.id)) || null;
     return {
       ...pickSafeUser(user),
       reports_total: reportInfo?.total || 0,
       reports_pending: reportInfo?.pending || 0,
       verification_status: verificationInfo?.status || "none",
-      verification_submitted_at: verificationInfo?.submitted_at || null
+      verification_submitted_at: verificationInfo?.submitted_at || null,
+      otp_pending: !!pendingOtp,
+      otp_expires_at: pendingOtp?.expires_at || null
     };
   }));
 });
@@ -277,6 +300,53 @@ router.patch("/users/:id", async (req, res) => {
     await activatePendingLikesForUser(user.id, req.app);
   }
   return res.json({ message: "User updated", user: pickSafeUser(user) });
+});
+
+router.post("/users/:id/verify-account", async (req, res) => {
+  const userId = req.params.id;
+  const user = await models.User.findByPk(userId);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  if ((user.role || "user") === "admin") {
+    return res.status(400).json({ error: "Cannot verify an admin account" });
+  }
+
+  if (user.verified) {
+    return res.json({ message: "Account already verified", user: pickSafeUser(user) });
+  }
+
+  const code = String(req.body?.code || "").trim();
+  if (code) {
+    const otp = await models.Otp.findOne({
+      where: {
+        user_id: user.id,
+        code,
+        verified: false
+      },
+      order: [["created_at", "DESC"]]
+    });
+    if (!otp) {
+      return res.status(400).json({ error: "Invalid code" });
+    }
+    if (new Date(otp.expires_at) < new Date()) {
+      return res.status(400).json({ error: "Code expired" });
+    }
+    otp.verified = true;
+    await otp.save();
+  } else {
+    // Force-verify without OTP (manual admin override).
+    await models.Otp.update(
+      { verified: true },
+      { where: { user_id: user.id, verified: false } }
+    );
+  }
+
+  user.verified = true;
+  await user.save();
+
+  return res.json({
+    message: code ? "Account verified (OTP confirmed)" : "Account verified (admin override)",
+    user: pickSafeUser(user)
+  });
 });
 
 router.get("/users/:id/conversations", async (req, res) => {

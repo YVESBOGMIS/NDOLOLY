@@ -1094,6 +1094,23 @@ input, select, textarea {
   box-shadow: 0 8px 18px rgba(26, 26, 29, 0.08);
 }
 
+.chat-profile-link {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-profile-meta {
+  min-width: 0;
+}
+
 .chat-header img {
   width: 44px;
   height: 44px;

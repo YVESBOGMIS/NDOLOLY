@@ -29,6 +29,10 @@ app.set("io", io);
 
 app.use(
   helmet({
+    // This project serves an API (plus static `/uploads`). A restrictive CSP here can
+    // break image/media loading when the frontend is served from the same origin.
+    // The frontend (Vite / web host) should be responsible for any CSP.
+    contentSecurityPolicy: false,
     crossOriginResourcePolicy: { policy: "cross-origin" }
   })
 );
@@ -53,6 +57,8 @@ app.use("/match", matchRoutes);
 app.use("/messages", messageRoutes);
 app.use("/moderation", moderationRoutes);
 app.use("/admin", adminRoutes);
+// Backward-compatible alias for frontends that proxy admin calls via `/admin-api/*`.
+app.use("/admin-api", adminRoutes);
 
 app.use((req, res) => res.status(404).json({ error: "Not found" }));
 

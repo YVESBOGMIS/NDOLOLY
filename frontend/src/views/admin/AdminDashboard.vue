@@ -70,6 +70,11 @@
               <span class="pill">{{ item.location || "Sans ville" }}</span>
               <span class="pill" :class="{ warn: !item.verified }">{{ item.verified ? "verifie" : "non verifie" }}</span>
             </div>
+            <div class="admin-actions">
+              <button v-if="!item.verified" class="button tiny" @click="activateUserAccount(item)">
+                Activer compte (OTP)
+              </button>
+            </div>
           </div>
         </div>
       </article>
@@ -265,6 +270,11 @@
                     <strong>{{ item.name }}</strong>
                     <div class="muted">{{ item.email || item.phone || "Sans contact" }}</div>
                     <div class="muted">{{ item.location || "Sans ville" }}</div>
+                    <div class="admin-actions" style="margin-top: 8px;">
+                      <button v-if="!item.verified" class="button tiny" @click="activateUserAccount(item)">
+                        Activer compte (OTP)
+                      </button>
+                    </div>
                   </div>
                 </div>
               </td>
@@ -273,11 +283,23 @@
                   <span class="pill">{{ item.role }}</span>
                   <span class="pill" :class="{ warn: item.suspended }">{{ item.suspended ? "suspendu" : "actif" }}</span>
                   <span class="pill" :class="{ success: item.premium }">{{ item.premium ? "premium" : "standard" }}</span>
+                  <span class="pill" :class="{ warn: !item.verified, success: item.verified }">
+                    {{ item.verified ? "verifie" : "non verifie" }}
+                  </span>
                   <span v-if="item.reverification_required" class="pill warn">reverification requise</span>
                 </div>
               </td>
               <td>{{ item.reports_pending }} en attente / {{ item.reports_total }} total</td>
-              <td>{{ item.reverification_required ? "reverification requise" : item.verification_status }}</td>
+              <td>
+                <div class="admin-pills">
+                  <span class="pill">
+                    {{ item.reverification_required ? "reverification requise" : item.verification_status }}
+                  </span>
+                  <span v-if="!item.verified" class="pill" :class="{ warn: !item.otp_pending, success: item.otp_pending }">
+                    {{ item.otp_pending ? "OTP en attente" : "OTP manquant/expire" }}
+                  </span>
+                </div>
+              </td>
               <td>
                 <div class="admin-actions">
                   <button class="button tiny secondary" @click="toggleUser(item, 'suspended', !item.suspended)">
@@ -552,6 +574,19 @@ const toggleUser = async (user, field, value) => {
     await Promise.all([loadUsers(), loadOverview(), loadVerifications()]);
   } catch (err) {
     setError(err, "Impossible de mettre a jour cet utilisateur.");
+  }
+};
+
+const activateUserAccount = async (user) => {
+  if (!user?.id) return;
+  const confirmed = window.confirm("Activer ce compte (validation OTP faite manuellement par l'admin) ?");
+  if (!confirmed) return;
+  notice.value = "";
+  try {
+    await adminApi.post(`/admin/users/${user.id}/verify-account`, {});
+    await Promise.all([loadUsers(), loadOverview()]);
+  } catch (err) {
+    setError(err, "Impossible d'activer ce compte.");
   }
 };
 

@@ -16,7 +16,8 @@ client.interceptors.request.use((config) => {
 
   // In dev, the admin UI is served at `/admin` by Vite.
   // Admin API requests must go through `/admin-api/*` so they reach the backend via proxy.
-  if (!apiUrl && typeof config.url === "string") {
+  // In production builds, a blank `VITE_API_URL` means "same origin": do not rewrite.
+  if (import.meta.env.DEV && !apiUrl && typeof config.url === "string") {
     const url = config.url;
     if (url.startsWith("/admin/")) {
       config.url = `/admin-api/${url.slice("/admin/".length)}`;

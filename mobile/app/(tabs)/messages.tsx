@@ -57,6 +57,12 @@ export default function MessagesScreen() {
   }, [params?.matchId]);
   const handledMatchIdRef = useRef<string | null>(null);
 
+  const openMatchedProfile = useCallback(() => {
+    const id = activeMatch?.user?.id || activeMatch?.user?._id;
+    if (!id) return;
+    router.push(`/user/${id}`);
+  }, [activeMatch?.user?.id, activeMatch?.user?._id, router]);
+
   const getMessageId = (msg: any) => String(msg?.id || msg?._id || msg?.message_id || '');
   const dedupeByKey = useCallback(<T,>(list: T[], getKey: (item: T) => string) => {
     const seen = new Set<string>();
@@ -624,17 +630,28 @@ export default function MessagesScreen() {
           <Pressable onPress={() => setActiveMatch(null)}>
             <Text style={styles.backText}>Retour</Text>
           </Pressable>
-          <View style={styles.chatAvatarWrap}>
-            <Image
-              source={{
-                uri:
-                  resolvePhoto(activeMatch.user?.photos?.[0]) ||
-                  'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=200&q=80',
-              }}
-              style={styles.chatAvatar}
-            />
-          </View>
-          <View style={styles.chatTitleWrap} />
+          <Pressable style={styles.chatProfilePressable} onPress={openMatchedProfile}>
+            <View style={styles.chatAvatarWrap}>
+              <Image
+                source={{
+                  uri:
+                    resolvePhoto(activeMatch.user?.photos?.[0]) ||
+                    'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=200&q=80',
+                }}
+                style={styles.chatAvatar}
+              />
+            </View>
+            <View style={styles.chatTitleWrap}>
+              <Text style={styles.chatTitle} numberOfLines={1}>
+                {activeMatch.user?.name || 'Profil'}
+              </Text>
+              {activeMatch.user?.location ? (
+                <Text style={styles.chatSubtitle} numberOfLines={1}>
+                  {activeMatch.user.location}
+                </Text>
+              ) : null}
+            </View>
+          </Pressable>
         </View>
         <Pressable style={styles.chatMenuFloating} onPress={openOptions}>
           <Ionicons name="ellipsis-vertical" size={18} color="#6b7280" />
@@ -1116,6 +1133,13 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingRight: 8,
   },
+  chatProfilePressable: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   chatTitleWrap: {
     flex: 1,
     minWidth: 0,
@@ -1150,6 +1174,10 @@ const styles = StyleSheet.create({
   chatTitle: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  chatSubtitle: {
+    fontSize: 12,
+    color: 'rgba(26,26,29,0.62)',
   },
   messageList: {
     flex: 1,

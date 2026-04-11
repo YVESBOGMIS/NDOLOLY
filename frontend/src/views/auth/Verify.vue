@@ -40,6 +40,31 @@ const contact = ref("");
 const otp = ref("");
 const notice = ref("");
 
+const loadFromLink = () => {
+  try {
+    const params = new URLSearchParams(window.location.search || "");
+    const linkedContact =
+      params.get("contact") ||
+      params.get("email") ||
+      params.get("phone") ||
+      "";
+    const linkedCode = params.get("code") || "";
+
+    if (linkedContact) {
+      contact.value = linkedContact;
+      localStorage.setItem(
+        "ndololy_pending_contact",
+        JSON.stringify(linkedContact.includes("@") ? { email: linkedContact } : { phone: linkedContact })
+      );
+    }
+    if (linkedCode) {
+      otp.value = linkedCode;
+    }
+  } catch {
+    // ignore
+  }
+};
+
 const parseContact = () => {
   const value = contact.value.trim();
   if (!value) return {};
@@ -85,5 +110,6 @@ const resend = async () => {
 
 onMounted(() => {
   loadSavedContact();
+  loadFromLink();
 });
 </script>
