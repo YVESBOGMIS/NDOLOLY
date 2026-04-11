@@ -18,6 +18,7 @@ export default defineConfig({
       "/match": "http://127.0.0.1:4000",
       "/messages": "http://127.0.0.1:4000",
       "/moderation": "http://127.0.0.1:4000",
+      "/media-proxy": "http://127.0.0.1:4000",
       "/admin-api": {
         target: "http://127.0.0.1:4000",
         changeOrigin: true,

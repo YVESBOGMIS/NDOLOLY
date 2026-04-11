@@ -1,9 +1,61 @@
 import { API_BASE_URL } from './config';
 
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+const MEDIA_PROXY_HOSTS = new Set([
+  'images.pexels.com',
+  'images.unsplash.com',
+  'plus.unsplash.com',
+  'source.unsplash.com',
+]);
+
+const getApiOrigin = () => {
+  try {
+    return new URL(API_BASE_URL).origin;
+  } catch {
+    return String(API_BASE_URL || '').replace(/\/+$/, '');
+  }
+};
+
+const joinBase = (base: string, path: string) => {
+  const cleanBase = String(base || '').replace(/\/+$/, '');
+  const cleanPath = String(path || '').replace(/^\/+/, '');
+  if (!cleanBase) return `/${cleanPath}`;
+  return `${cleanBase}/${cleanPath}`;
+};
+
 export function resolvePhoto(url?: string | null) {
   if (!url) return '';
-  if (url.startsWith('http')) return url;
-  return `${API_BASE_URL}${url}`;
+  const raw = String(url).trim().replace(/\\/g, '/');
+  const base = getApiOrigin();
+  const baseUrl = (() => {
+    try {
+      return new URL(base);
+    } catch {
+      return null;
+    }
+  })();
+
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const parsed = new URL(raw);
+      const shouldRewriteLocalHost = LOCAL_HOSTS.has(parsed.hostname);
+      const shouldRewriteUploadsFromOtherOrigin =
+        !!baseUrl && parsed.pathname.startsWith('/uploads/') && parsed.origin !== baseUrl.origin;
+      if ((shouldRewriteLocalHost || shouldRewriteUploadsFromOtherOrigin) && base) {
+        return `${joinBase(base, parsed.pathname)}${parsed.search}${parsed.hash}`;
+      }
+
+      // Route known image CDNs through local backend proxy to avoid device-side network quirks.
+      if (base && MEDIA_PROXY_HOSTS.has(parsed.hostname)) {
+        return `${joinBase(base, '/media-proxy')}?url=${encodeURIComponent(raw)}`;
+      }
+    } catch {
+      // Keep raw value when URL parsing fails.
+    }
+    return raw;
+  }
+
+  return base ? joinBase(base, raw) : raw;
 }
 
 const STAFF_NAME_PATTERN = /\b(admin|backoffice)\b/i;

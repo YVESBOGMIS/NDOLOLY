@@ -51,6 +51,71 @@ app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 
+const MEDIA_PROXY_HOSTS = new Set([
+  "images.pexels.com",
+  "images.unsplash.com",
+  "plus.unsplash.com",
+  "source.unsplash.com"
+]);
+
+app.get("/media-proxy", async (req, res) => {
+  const rawUrl = String(req.query?.url || "").trim();
+  if (!rawUrl) {
+    return res.status(400).json({ error: "Missing url" });
+  }
+
+  let target;
+  try {
+    target = new URL(rawUrl);
+  } catch {
+    return res.status(400).json({ error: "Invalid url" });
+  }
+
+  if (!["http:", "https:"].includes(target.protocol)) {
+    return res.status(400).json({ error: "Invalid protocol" });
+  }
+
+  if (!MEDIA_PROXY_HOSTS.has(target.hostname)) {
+    return res.status(403).json({ error: "Host not allowed" });
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const upstream = await fetch(target.toString(), {
+      signal: controller.signal,
+      redirect: "follow"
+    });
+
+    if (!upstream.ok) {
+      return res.status(upstream.status).json({ error: "Upstream fetch failed" });
+    }
+
+    const contentType = upstream.headers.get("content-type") || "";
+    if (!/^image\//i.test(contentType)) {
+      return res.status(415).json({ error: "Unsupported content type" });
+    }
+
+    const contentLength = upstream.headers.get("content-length");
+    if (contentLength) {
+      res.setHeader("Content-Length", contentLength);
+    }
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "public, max-age=3600");
+
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    return res.send(buffer);
+  } catch (err) {
+    const aborted = err?.name === "AbortError";
+    return res.status(aborted ? 504 : 502).json({
+      error: aborted ? "Upstream timeout" : "Upstream request failed"
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+});
+
 app.use("/auth", authRoutes);
 app.use("/profile", profileRoutes);
 app.use("/match", matchRoutes);
