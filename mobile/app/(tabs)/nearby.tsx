@@ -6,6 +6,7 @@ import * as Location from 'expo-location';
 
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import VerificationReminderCard from '@/components/VerificationReminderCard';
 import { api } from '@/lib/api';
 import { resolvePhoto, computeAge, sanitizePublicProfiles } from '@/lib/utils';
 import BrandMark from '@/components/BrandMark';
@@ -49,6 +50,10 @@ export default function NearbyScreen() {
     showVerificationRequiredPrompt(() => {
       router.push(`/profile?promptVerification=${Date.now()}`);
     });
+  };
+
+  const goToVerification = () => {
+    router.push(`/profile?promptVerification=${Date.now()}`);
   };
 
   const updateLocation = async () => {
@@ -169,14 +174,7 @@ export default function NearbyScreen() {
       <Text style={[styles.title, { color: colors.text }]}>Pres de vous</Text>
       <Text style={[styles.subtitle, { color: colors.text }]}>Profils a proximite.</Text>
       {notice ? <Text style={[styles.notice, { color: colors.text }]}>{notice}</Text> : null}
-      {!canInteract ? (
-        <Pressable style={styles.noticeCard} onPress={promptVerificationRequired}>
-          <Text style={styles.noticeTitle}>Verification photo requise</Text>
-          <Text style={styles.noticeText}>
-            Tant que votre photo n'est pas validee, vous ne pouvez pas liker ces profils. Appuyez ici pour envoyer une photo.
-          </Text>
-        </Pressable>
-      ) : null}
+      <VerificationReminderCard status={verificationStatus} onVerifyNow={goToVerification} />
 
       {loading && <Text style={[styles.subtitle, { color: colors.text }]}>Chargement...</Text>}
 

@@ -5,6 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import VerificationReminderCard from '@/components/VerificationReminderCard';
 import { api } from '@/lib/api';
 import { resolvePhoto, sanitizePublicProfiles } from '@/lib/utils';
 import BrandMark from '@/components/BrandMark';
@@ -94,6 +95,10 @@ export default function ActionsScreen() {
     });
   };
 
+  const goToVerification = () => {
+    router.push(`/profile?promptVerification=${Date.now()}`);
+  };
+
   const likeBack = async (profile: any) => {
     if (!profile?.id) return;
     if (!canInteract) {
@@ -157,14 +162,7 @@ export default function ActionsScreen() {
         </Pressable>
       </View>
 
-      {!canInteract ? (
-        <Pressable style={styles.noticeCard} onPress={promptVerificationRequired}>
-          <Text style={styles.noticeTitle}>Verification photo requise</Text>
-          <Text style={styles.noticeText}>
-            Vous devez verifier votre profil avant de liker en retour. Appuyez ici pour envoyer une photo.
-          </Text>
-        </Pressable>
-      ) : null}
+      <VerificationReminderCard status={verificationStatus} onVerifyNow={goToVerification} />
 
       {tab === 'likes' ? (
         <>

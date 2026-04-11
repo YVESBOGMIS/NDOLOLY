@@ -8,10 +8,10 @@ export const isVerificationRequiredError = (err: unknown) => {
 export const showVerificationRequiredPrompt = (onVerifyNow: () => void) => {
   Alert.alert(
     'Verification requise',
-    "Vous devez verifier votre profil photo avant de liker, super liker ou passer. Vous pouvez envoyer une photo maintenant.",
+    "Verifiez votre profil pour acceder a plus de fonctionnalites (likes, super likes, passer) et inspirer confiance. Vous pouvez envoyer une photo maintenant.",
     [
       { text: 'Plus tard', style: 'cancel' },
-      { text: 'Charger une photo', onPress: onVerifyNow },
+      { text: 'Envoyer une photo', onPress: onVerifyNow },
     ]
   );
 };

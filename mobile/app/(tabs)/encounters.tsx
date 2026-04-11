@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import VerificationReminderCard from '@/components/VerificationReminderCard';
 import { api } from '@/lib/api';
 import { computeAge, resolvePhoto, sanitizePublicProfiles } from '@/lib/utils';
 import { getFilters } from '@/lib/filters';
@@ -217,6 +218,10 @@ export default function EncountersScreen() {
     });
   };
 
+  const goToVerification = () => {
+    router.push(`/profile?promptVerification=${Date.now()}`);
+  };
+
   const advance = async () => {
     const nextIndex = findNextUnseenIndex(feed, seenRef.current, cursor + 1);
     if (nextIndex >= 0) {
@@ -381,14 +386,7 @@ export default function EncountersScreen() {
 
       {loading && <Text style={[styles.loadingText, { top: insets.top + 70 }]}>Chargement...</Text>}
 
-      {!canInteract ? (
-        <Pressable style={styles.noticeCard} onPress={promptVerificationRequired}>
-          <Text style={styles.noticeTitle}>Verification photo requise</Text>
-          <Text style={styles.noticeText}>
-            Verifiez votre profil pour pouvoir liker, super liker ou passer. Appuyez ici pour envoyer une photo.
-          </Text>
-        </Pressable>
-      ) : null}
+      <VerificationReminderCard status={verificationStatus} onVerifyNow={goToVerification} />
 
       {!current && !loading ? (
         <View style={styles.emptyWrap}>

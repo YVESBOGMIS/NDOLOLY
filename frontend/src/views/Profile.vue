@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="card">
     <h2>Mon profil</h2>
     <div class="actions" style="margin-bottom: 12px;">
@@ -9,7 +9,7 @@
 
     <div v-if="!form.verified_photo" :class="['verification-card', { rejected: verification?.status === 'rejected' }]">
       <div class="verification-text">
-        <strong>Verification photo</strong>
+        <strong>Photo de verification (badge)</strong>
         <span :class="['pill', verificationPillClass]">{{ verificationLabel }}</span>
         <p class="verification-note">{{ verificationNote }}</p>
       </div>
@@ -30,6 +30,38 @@
     </p>
 
     <template v-if="!form.reverification_required">
+    <div class="verification-card" style="margin-bottom: 12px;">
+      <div class="verification-text">
+        <strong>Photos du profil</strong>
+        <span class="pill">{{ (form.photos || []).length }}/6</span>
+        <p class="verification-note">
+          Ces photos sont publiques (elles s'affichent sur votre profil). La photo de verification (badge) sert uniquement a la verification par l'admin et n'est pas affichee sur votre profil.
+        </p>
+      </div>
+      <div class="verification-actions">
+        <button
+          class="button secondary"
+          type="button"
+          :disabled="(form.photos || []).length >= 6"
+          @click="uploadPhoto"
+        >
+          Ajouter une photo (profil)
+        </button>
+      </div>
+    </div>
+
+    <div class="photo-list" style="margin-bottom: 12px;">
+      <div v-for="(photo, index) in form.photos" :key="photo + index" class="photo-item">
+        <button class="photo-preview-trigger" type="button" @click="openPhotoPreview(photo)" aria-label="Agrandir la photo">
+          <img :src="resolvePhotoSrc(photo)" alt="photo" @error="handleImgError(photo)" />
+        </button>
+        <div class="photo-actions">
+          <button class="button tiny secondary" @click="startReplace(photo)">Modifier</button>
+          <button class="button tiny danger" @click="deletePhoto(photo)">Supprimer</button>
+        </div>
+      </div>
+    </div>
+
     <div class="verification-card" style="margin-bottom: 12px;">
       <div class="verification-text">
         <strong>Mode incognito</strong>
@@ -163,7 +195,6 @@
       <button class="button" :disabled="saving" @click="save">
         {{ saving ? "Sauvegarde..." : "Sauvegarder" }}
       </button>
-      <button class="button secondary" @click="uploadPhoto">Ajouter une photo</button>
     </div>
     <div class="actions">
       <button class="button danger" :disabled="deleting" @click="deleteAccount">
@@ -185,21 +216,9 @@
       @change="handleVerificationFile"
     />
 
-    <div v-if="!form.reverification_required" class="photo-list" style="margin-top: 12px;">
-      <div v-for="(photo, index) in form.photos" :key="photo + index" class="photo-item">
-        <button class="photo-preview-trigger" type="button" @click="openPhotoPreview(photo)" aria-label="Agrandir la photo">
-          <img :src="resolvePhotoSrc(photo)" alt="photo" @error="handleImgError(photo)" />
-        </button>
-        <div class="photo-actions">
-          <button class="button tiny secondary" @click="startReplace(photo)">Modifier</button>
-          <button class="button tiny danger" @click="deletePhoto(photo)">Supprimer</button>
-        </div>
-      </div>
-    </div>
-
     <div v-if="photoPreviewSrc" class="modal photo-preview-wrap" @click.self="closePhotoPreview">
       <div class="photo-preview-modal fullscreen">
-        <button class="photo-preview-close" type="button" @click="closePhotoPreview" aria-label="Fermer">×</button>
+        <button class="photo-preview-close" type="button" @click="closePhotoPreview" aria-label="Fermer">Ã—</button>
         <img class="photo-preview-image fullscreen" :src="photoPreviewSrc" alt="photo" />
       </div>
     </div>
@@ -292,7 +311,7 @@ const verificationPillClass = computed(() => {
 const verificationActionLabel = computed(() => (
   verification.value?.status === "rejected"
     ? "Recommencer la verification"
-    : "Envoyer ma photo de verification"
+    : "Envoyer ma photo de verification (badge)"
 ));
 const verificationNote = computed(() => {
   if (form.value.verified_photo) {
@@ -306,7 +325,7 @@ const verificationNote = computed(() => {
       ? `Demande rejetee : ${verification.value.note}`
       : "Votre demande a ete rejetee. Envoyez une nouvelle photo nette de votre visage.";
   }
-  return "Envoyez une photo de verification distincte de votre galerie publique. Tant que cette verification n'est pas approuvee, vous ne pouvez pas liker, super liker ni passer.";
+  return "Envoyez une photo de verification (badge) distincte de vos photos de profil. Cette photo ne sert qu'a la verification par l'admin. Tant que cette verification n'est pas approuvee, vous ne pouvez pas liker, super liker ni passer.";
 });
 
 const save = async () => {

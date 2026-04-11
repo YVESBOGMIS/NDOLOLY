@@ -71,18 +71,37 @@
         {{ actionToast.message }}
       </div>
 
+      <div v-if="verificationReminder.visible" class="toast verification-reminder" @click.stop>
+        <strong>Verification photo</strong>
+        <div class="muted" style="margin-top: 6px;">
+          Verifiez votre profil pour debloquer plus de fonctionnalites (likes, super likes, passer) et inspirer confiance.
+        </div>
+        <div class="actions" style="margin-top: 12px;">
+          <button class="button tiny secondary" type="button" @click="snoozeVerificationReminder">Plus tard</button>
+          <button class="button tiny" type="button" @click="openVerificationPhotoPicker">Envoyer maintenant</button>
+        </div>
+      </div>
+
       <div v-if="verificationGateOpen" class="modal" @click.self="verificationGateOpen = false">
         <div class="card">
           <h3>Verification requise</h3>
           <p class="muted" style="margin-top: 6px;">
-            Vous devez verifier votre photo de profil avant de liker, super liker ou passer.
+            Verifiez votre profil pour debloquer plus de fonctionnalites (likes, super likes, passer) et inspirer confiance.
           </p>
           <div class="actions" style="margin-top: 14px;">
             <button class="button secondary" type="button" @click="verificationGateOpen = false">Plus tard</button>
-            <button class="button" type="button" @click="goToProfileForVerification">Ouvrir mon profil</button>
+            <button class="button" type="button" @click="openVerificationPhotoPicker">Envoyer une photo</button>
           </div>
         </div>
       </div>
+
+      <input
+        ref="verificationPhotoInput"
+        type="file"
+        accept="image/*"
+        style="display:none"
+        @change="handleVerificationPhotoSelected"
+      />
 
       <div v-if="matchModal.visible" class="modal" @click.self="closeMatchModal">
         <div class="card">
@@ -199,7 +218,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import api, { clearToken, getToken } from "./api";
 import adminApi, { clearAdminToken, getAdminToken } from "./adminApi";
 import { connectSocket, getSocket } from "./socket";
@@ -241,6 +260,10 @@ const messages = ref([]);
 const unreadCount = ref(0);
 const toast = ref({ visible: false, fromName: "" });
 const actionToast = ref({ visible: false, message: "" });
+const verificationReminder = ref({ visible: false });
+const verificationPhotoInput = ref(null);
+const verificationStatus = ref({ status: "unknown", fetched_at: 0 });
+let verificationReminderTimer = null;
 
 let webAudioCtx = null;
 let lastMessageSoundAt = 0;
@@ -523,6 +546,8 @@ const bootstrap = async () => {
       return;
     }
     await Promise.all([loadDiscover(), loadNearby(), loadLikes(), loadProfileViews(), loadMatches()]);
+    await refreshVerificationStatus(false).catch(() => {});
+    startVerificationReminderLoop();
 
     startLocationWatch();
     const socket = connectSocket(user.value.id);
@@ -628,6 +653,10 @@ const logout = () => {
   unreadCount.value = 0;
   toast.value = { visible: false, fromName: "" };
   selectedProfile.value = null;
+  verificationReminder.value.visible = false;
+  verificationStatus.value = { status: "unknown", fetched_at: 0 };
+  if (verificationReminderTimer) clearTimeout(verificationReminderTimer);
+  verificationReminderTimer = null;
   profileLoading.value = false;
   setRoute("/login");
   document.title = "NDOLOLY";
@@ -655,13 +684,112 @@ const showActionToast = (message) => {
   }, 3000);
 };
 
-const goToProfileForVerification = () => {
-  verificationGateOpen.value = false;
-  current.value = "profile";
+const VERIFICATION_REMINDER_SNOOZE_KEY = "ndololy_verification_reminder_snooze_until";
+const VERIFICATION_REMINDER_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+const getVerificationReminderSnoozeUntil = () => {
+  try {
+    const raw = localStorage.getItem(VERIFICATION_REMINDER_SNOOZE_KEY);
+    const parsed = Number(raw || 0);
+    return Number.isFinite(parsed) ? parsed : 0;
+  } catch {
+    return 0;
+  }
+};
+
+const setVerificationReminderSnoozeUntil = (value) => {
+  try {
+    localStorage.setItem(VERIFICATION_REMINDER_SNOOZE_KEY, String(value || 0));
+  } catch {
+    // ignore
+  }
+};
+
+const snoozeVerificationReminder = (ms = VERIFICATION_REMINDER_INTERVAL_MS) => {
+  verificationReminder.value.visible = false;
+  setVerificationReminderSnoozeUntil(Date.now() + ms);
 };
 
 const promptVerificationRequired = () => {
   verificationGateOpen.value = true;
+};
+
+const refreshVerificationStatus = async (force = false) => {
+  if (!user.value?.id) return verificationStatus.value.status;
+  if (!force && Date.now() - (verificationStatus.value.fetched_at || 0) < 60_000) {
+    return verificationStatus.value.status;
+  }
+  try {
+    const { data } = await api.get(`/profile/verification-status?ts=${Date.now()}`);
+    verificationStatus.value = { status: data?.status || "none", fetched_at: Date.now() };
+    if (data?.status === "approved") {
+      user.value = { ...(user.value || {}), verified_photo: true };
+    }
+  } catch {
+    // ignore
+  }
+  return verificationStatus.value.status;
+};
+
+const maybeShowVerificationReminder = async () => {
+  if (!user.value?.id) return;
+  if (isAdminRoute.value) return;
+  if (reverificationLocked.value) return;
+  if (user.value?.verified_photo) return;
+  if (current.value === "messages") return;
+  if (verificationGateOpen.value || matchModal.value.visible) return;
+
+  const snoozeUntil = getVerificationReminderSnoozeUntil();
+  if (Date.now() < snoozeUntil) return;
+
+  const status = await refreshVerificationStatus(false);
+  if (status === "approved" || status === "pending") return;
+
+  verificationReminder.value.visible = true;
+  // Avoid showing on every navigation while user ignores it.
+  setVerificationReminderSnoozeUntil(Date.now() + 60 * 60 * 1000);
+  if (verificationReminderTimer) clearTimeout(verificationReminderTimer);
+  verificationReminderTimer = setTimeout(() => {
+    verificationReminder.value.visible = false;
+  }, 20000);
+};
+
+const startVerificationReminderLoop = () => {
+  if (verificationReminderTimer) clearTimeout(verificationReminderTimer);
+  verificationReminderTimer = setTimeout(() => {
+    maybeShowVerificationReminder();
+  }, 6000);
+};
+
+const openVerificationPhotoPicker = () => {
+  verificationGateOpen.value = false;
+  verificationReminder.value.visible = false;
+  // Avoid immediate re-prompt loops when user is actively tapping.
+  snoozeVerificationReminder(10 * 60 * 1000);
+  verificationPhotoInput.value?.click?.();
+};
+
+const handleVerificationPhotoSelected = async (event) => {
+  const file = event.target?.files?.[0];
+  if (!file) return;
+  try {
+    const formData = new FormData();
+    formData.append("photo", file);
+    await api.post("/profile/verify-request", formData, {
+      headers: { "Content-Type": "multipart/form-data" }
+    });
+    showActionToast("Photo envoyee. Votre demande est en attente de validation.");
+    verificationStatus.value = { status: "pending", fetched_at: Date.now() };
+    setVerificationReminderSnoozeUntil(Date.now() + VERIFICATION_REMINDER_INTERVAL_MS);
+  } catch (err) {
+    showActionToast(err?.response?.data?.error || err?.message || "Impossible d'envoyer la photo.");
+  } finally {
+    try {
+      event.target.value = "";
+    } catch {
+      // ignore
+    }
+  }
 };
 
 const rememberRecentMatch = (matchId) => {
@@ -724,16 +852,10 @@ const goToMatchChat = async () => {
 
 const ensureCanInteract = async () => {
   if (user.value?.verified_photo) return true;
-  try {
-    const { data } = await api.get(`/profile/verification-status?ts=${Date.now()}`);
-    if (data?.status === "approved") {
-      user.value = { ...(user.value || {}), verified_photo: true };
-      return true;
-    }
-  } catch {
-    // ignore
-  }
+  const status = await refreshVerificationStatus(true).catch(() => "unknown");
+  if (status === "approved" || user.value?.verified_photo) return true;
   promptVerificationRequired();
+  snoozeVerificationReminder(10 * 60 * 1000);
   return false;
 };
 
@@ -936,6 +1058,16 @@ const openMessages = () => {
   unreadCount.value = matches.value.reduce((sum, item) => sum + (item.unread_count || 0), 0);
   document.title = "NDOLOLY";
 };
+
+watch(
+  () => [user.value?.id, user.value?.verified_photo, current.value],
+  () => {
+    if (!user.value?.id) return;
+    if (user.value?.verified_photo) return;
+    if (verificationReminder.value.visible) return;
+    startVerificationReminderLoop();
+  }
+);
 
 onMounted(async () => {
   syncRoute();

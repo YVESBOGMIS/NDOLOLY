@@ -1577,6 +1577,10 @@ input, select, textarea {
   max-width: min(360px, calc(100vw - 40px));
 }
 
+.toast.verification-reminder {
+  cursor: default;
+}
+
 .admin-auth-shell {
   background:
     radial-gradient(circle at top left, rgba(255, 183, 3, 0.2), transparent 30%),
