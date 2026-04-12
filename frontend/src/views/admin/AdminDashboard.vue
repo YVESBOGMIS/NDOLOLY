@@ -583,8 +583,19 @@ const activateUserAccount = async (user) => {
   if (!confirmed) return;
   notice.value = "";
   try {
-    await adminApi.post(`/admin/users/${user.id}/verify-account`, {});
+    try {
+      await adminApi.post(`/admin/users/${user.id}/verify-account`, {});
+    } catch (err) {
+      const status = Number(err?.response?.status || 0);
+      // Compatibility fallback for older backends that don't expose `/verify-account` yet.
+      if ([404, 405, 501].includes(status)) {
+        await adminApi.patch(`/admin/users/${user.id}`, { verified: true });
+      } else {
+        throw err;
+      }
+    }
     await Promise.all([loadUsers(), loadOverview()]);
+    notice.value = "Compte active avec succes.";
   } catch (err) {
     setError(err, "Impossible d'activer ce compte.");
   }
