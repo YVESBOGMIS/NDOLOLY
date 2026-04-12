@@ -149,8 +149,8 @@
                 :class="{ active: String(activeConversationId) === String(conversation.id) }"
                 @click="selectConversation(conversation)"
               >
-                <div class="avatar-badge">
-                  <img :src="resolveAsset(conversation.other_user?.photos?.[0]) || placeholderAvatar" alt="" />
+                <div v-if="resolveAsset(conversation.other_user?.photos?.[0])" class="avatar-badge">
+                  <img :src="resolveAsset(conversation.other_user?.photos?.[0])" alt="" />
                 </div>
                 <div style="margin-top: 8px;">
                   <strong>{{ conversation.other_user?.name || "Utilisateur inconnu" }}</strong>
@@ -166,7 +166,7 @@
             <div v-else>
               <div class="chat-frame admin-chat-frame">
                 <div class="chat-header">
-                  <img :src="resolveAsset(activeConversation.other_user?.photos?.[0]) || placeholderAvatar" alt="" />
+                  <img v-if="resolveAsset(activeConversation.other_user?.photos?.[0])" :src="resolveAsset(activeConversation.other_user?.photos?.[0])" alt="" />
                   <div>
                     <strong>{{ activeConversation.other_user?.name || "Utilisateur inconnu" }}</strong>
                     <div class="muted">
@@ -493,8 +493,6 @@ const formatDate = (value) => {
   if (!value) return "-";
   return new Date(value).toLocaleString();
 };
-
-const placeholderAvatar = "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=200&q=80";
 
 const sortedConversationPayload = computed(() => (
   [...conversationPayload.value].sort((a, b) => new Date(b.last_message_at) - new Date(a.last_message_at))
