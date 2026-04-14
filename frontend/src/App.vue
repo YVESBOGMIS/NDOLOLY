@@ -775,9 +775,7 @@ const handleVerificationPhotoSelected = async (event) => {
   try {
     const formData = new FormData();
     formData.append("photo", file);
-    await api.post("/profile/verify-request", formData, {
-      headers: { "Content-Type": "multipart/form-data" }
-    });
+    await api.post("/profile/verify-request", formData);
     showActionToast("Photo envoyee. Votre demande est en attente de validation.");
     verificationStatus.value = { status: "pending", fetched_at: Date.now() };
     setVerificationReminderSnoozeUntil(Date.now() + VERIFICATION_REMINDER_INTERVAL_MS);
@@ -948,9 +946,7 @@ const sendImage = async (file) => {
   if (!activeMatch.value || !file) return;
   const formData = new FormData();
   formData.append("image", file);
-  const { data } = await api.post(`/messages/${activeMatch.value.id}/image`, formData, {
-    headers: { "Content-Type": "multipart/form-data" }
-  });
+  const { data } = await api.post(`/messages/${activeMatch.value.id}/image`, formData);
   appendMessageUnique(data);
   await loadMatches();
 };
@@ -963,9 +959,7 @@ const sendAudio = async (blob) => {
       ? blob
       : new File([blob], `voice-${Date.now()}.webm`, { type: blob.type || "audio/webm" });
   formData.append("audio", file);
-  const { data } = await api.post(`/messages/${activeMatch.value.id}/audio`, formData, {
-    headers: { "Content-Type": "multipart/form-data" }
-  });
+  const { data } = await api.post(`/messages/${activeMatch.value.id}/audio`, formData);
   appendMessageUnique(data);
   await loadMatches();
 };

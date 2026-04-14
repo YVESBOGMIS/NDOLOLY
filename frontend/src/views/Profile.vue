@@ -1,6 +1,9 @@
 ﻿<template>
-  <div class="card">
-    <h2>Mon profil</h2>
+  <div class="card mobile-shell-card">
+    <div class="screen-head">
+      <div class="mobile-only screen-brand brand luxe">NDOLOLY</div>
+      <h2 class="screen-title">Mon profil</h2>
+    </div>
     <div class="actions" style="margin-bottom: 12px;">
       <button class="button ghost" @click="$emit('back')">Retour</button>
       <button class="button ghost" type="button" @click="$emit('preview')">Apercu</button>
@@ -365,9 +368,7 @@ const handleFile = async (event) => {
   if (!file) return;
   const formData = new FormData();
   formData.append("photo", file);
-  const { data } = await api.post("/profile/photo", formData, {
-    headers: { "Content-Type": "multipart/form-data" }
-  });
+  const { data } = await api.post("/profile/photo", formData);
   if (data?.photo) {
     form.value.photos = [...(form.value.photos || []), data.photo];
   }
@@ -389,9 +390,7 @@ const handleReplaceFile = async (event) => {
   const formData = new FormData();
   formData.append("photo", file);
   formData.append("oldPhoto", replaceTarget.value);
-  const { data } = await api.put("/profile/photo", formData, {
-    headers: { "Content-Type": "multipart/form-data" }
-  });
+  const { data } = await api.put("/profile/photo", formData);
   if (data?.photo) {
     const idx = (form.value.photos || []).indexOf(replaceTarget.value);
     if (idx >= 0) {
@@ -421,9 +420,7 @@ const handleVerificationFile = async (event) => {
   try {
     const formData = new FormData();
     formData.append("photo", file);
-    const { data } = await api.post("/profile/verify-request", formData, {
-      headers: { "Content-Type": "multipart/form-data" }
-    });
+    const { data } = await api.post("/profile/verify-request", formData);
     form.value.photo_verification = data?.verification || null;
     form.value.verified_photo = false;
     saveStatus.value = data?.message || "Verification envoyee a l'admin.";

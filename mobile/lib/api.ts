@@ -26,7 +26,15 @@ async function buildHeaders(extra?: Record<string, string>) {
 
 async function request(path: string, options: RequestOptions = {}) {
   const url = `${API_BASE_URL}${path}`;
-  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const isFormData =
+    !!options.body
+    && (
+      (typeof FormData !== 'undefined' && options.body instanceof FormData)
+      || (
+        typeof options.body === 'object'
+        && typeof (options.body as { append?: unknown }).append === 'function'
+      )
+    );
   const headers = await buildHeaders(options.headers);
   if (!isFormData && options.body && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';

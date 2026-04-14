@@ -4,7 +4,8 @@ const apiUrl = import.meta.env.VITE_API_URL || "";
 
 const client = axios.create({
   baseURL: apiUrl,
-  timeout: 8000
+  // Uploads from mobile-hotspot or weak Wi-Fi can exceed 8s.
+  timeout: 30000
 });
 
 client.interceptors.request.use((config) => {
