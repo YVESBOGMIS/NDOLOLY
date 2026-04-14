@@ -18,6 +18,21 @@ const andWhere = (...clauses) => {
   return { [Op.and]: filtered };
 };
 
+const getPresenceTracker = (req) => req.app?.get("presence") || null;
+
+const isUserOnlineNow = (req, userId) => {
+  const tracker = getPresenceTracker(req);
+  if (!tracker || typeof tracker.isUserOnline !== "function") return false;
+  return tracker.isUserOnline(userId);
+};
+
+const isRecentlyActive = (value, windowMs = 2 * 60 * 1000) => {
+  if (!value) return false;
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return false;
+  return Date.now() - timestamp <= windowMs;
+};
+
 const safeRemoveUpload = async (photoPath) => {
   if (!photoPath || typeof photoPath !== "string") return;
   if (!photoPath.startsWith("/uploads/")) return;
@@ -120,7 +135,10 @@ router.get("/overview", async (req, res) => {
       messages_total: messagesTotal,
       active_users_7d: activeUsers
     },
-    recent_users: recentUsersRows.map(pickSafeUser),
+    recent_users: recentUsersRows.map((row) => ({
+      ...pickSafeUser(row),
+      is_online: isUserOnlineNow(req, row.id) || isRecentlyActive(row.last_active_at)
+    })),
     recent_reports: recentReportsRows.map(toPlain)
   });
 });
@@ -229,7 +247,8 @@ router.get("/users", async (req, res) => {
       verification_status: verificationInfo?.status || "none",
       verification_submitted_at: verificationInfo?.submitted_at || null,
       otp_pending: !!pendingOtp,
-      otp_expires_at: pendingOtp?.expires_at || null
+      otp_expires_at: pendingOtp?.expires_at || null,
+      is_online: isUserOnlineNow(req, user.id) || isRecentlyActive(user.last_active_at)
     };
   }));
 });
@@ -244,33 +263,45 @@ router.patch("/users/:id", async (req, res) => {
     return res.status(400).json({ error: "You cannot revoke your own admin access" });
   }
 
-  if (typeof suspended === "boolean") user.suspended = suspended;
+  const updates = {};
+
+  if (typeof suspended === "boolean") updates.suspended = suspended;
   if (typeof premium === "boolean") {
-    user.premium = premium;
+    updates.premium = premium;
     if (!premium) {
-      user.incognito_mode = false;
+      updates.incognito_mode = false;
     }
   }
-  if (typeof verified === "boolean") user.verified = verified;
+  if (typeof verified === "boolean") updates.verified = verified;
   const shouldActivatePendingLikes = typeof verified_photo === "boolean" && verified_photo === true && !user.verified_photo;
   if (typeof verified_photo === "boolean") {
-    user.verified_photo = verified_photo;
-    user.reverification_required = !verified_photo;
+    updates.verified_photo = verified_photo;
+    updates.reverification_required = !verified_photo;
   }
-  if (role === "user" || role === "admin") user.role = role;
+  if (role === "user" || role === "admin") updates.role = role;
 
-  await user.save();
+  // Legacy rows can contain null role values; normalize them during admin updates.
+  if (!user.role && !updates.role) {
+    updates.role = "user";
+  }
+
+  if (Object.keys(updates).length > 0) {
+    await models.User.update(updates, { where: { id: user.id } });
+  }
+  const refreshedUser = await models.User.findByPk(user.id);
+  if (!refreshedUser) return res.status(404).json({ error: "User not found" });
+
   if (typeof verified_photo === "boolean") {
     const latestVerification = await models.PhotoVerification.findOne({
-      where: { user_id: user.id },
+      where: { user_id: refreshedUser.id },
       order: [["submitted_at", "DESC"]]
     });
     if (latestVerification) {
       latestVerification.status = verified_photo ? "approved" : "rejected";
       latestVerification.reviewed_at = new Date();
       latestVerification.reviewed_by = req.user.id;
-      if (!latestVerification.photo_url && user.photos?.length) {
-        latestVerification.photo_url = user.photos[user.photos.length - 1];
+      if (!latestVerification.photo_url && refreshedUser.photos?.length) {
+        latestVerification.photo_url = refreshedUser.photos[refreshedUser.photos.length - 1];
       }
       if (!latestVerification.note) {
         latestVerification.note = verified_photo
@@ -289,7 +320,7 @@ router.patch("/users/:id", async (req, res) => {
         },
         {
           where: {
-            user_id: user.id,
+            user_id: refreshedUser.id,
             status: "approved"
           }
         }
@@ -297,9 +328,9 @@ router.patch("/users/:id", async (req, res) => {
     }
   }
   if (shouldActivatePendingLikes) {
-    await activatePendingLikesForUser(user.id, req.app);
+    await activatePendingLikesForUser(refreshedUser.id, req.app);
   }
-  return res.json({ message: "User updated", user: pickSafeUser(user) });
+  return res.json({ message: "User updated", user: pickSafeUser(refreshedUser) });
 });
 
 router.post("/users/:id/verify-account", async (req, res) => {
@@ -311,7 +342,11 @@ router.post("/users/:id/verify-account", async (req, res) => {
   }
 
   if (user.verified) {
-    return res.json({ message: "Account already verified", user: pickSafeUser(user) });
+    if (!user.role) {
+      await models.User.update({ role: "user" }, { where: { id: user.id } });
+    }
+    const alreadyVerified = await models.User.findByPk(user.id);
+    return res.json({ message: "Account already verified", user: pickSafeUser(alreadyVerified || user) });
   }
 
   const code = String(req.body?.code || "").trim();
@@ -340,12 +375,16 @@ router.post("/users/:id/verify-account", async (req, res) => {
     );
   }
 
-  user.verified = true;
-  await user.save();
+  const verifyUpdates = { verified: true };
+  if (!user.role) {
+    verifyUpdates.role = "user";
+  }
+  await models.User.update(verifyUpdates, { where: { id: user.id } });
+  const refreshedUser = await models.User.findByPk(user.id);
 
   return res.json({
     message: code ? "Account verified (OTP confirmed)" : "Account verified (admin override)",
-    user: pickSafeUser(user)
+    user: pickSafeUser(refreshedUser || user)
   });
 });
 

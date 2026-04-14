@@ -63,7 +63,19 @@
         <div class="admin-list">
           <div v-for="item in overview.recent_users || []" :key="item.id" class="admin-list-row">
             <div>
-              <strong>{{ item.name }}</strong>
+              <div style="display: inline-flex; align-items: center; gap: 8px;">
+                <span
+                  :title="item.is_online ? 'Connecte maintenant' : 'Non connecte'"
+                  :style="{
+                    width: '10px',
+                    height: '10px',
+                    borderRadius: '999px',
+                    display: 'inline-block',
+                    background: item.is_online ? '#22c55e' : '#ef4444'
+                  }"
+                ></span>
+                <strong>{{ item.name }}</strong>
+              </div>
               <div class="muted">{{ item.email || item.phone || "Sans contact" }}</div>
             </div>
             <div class="admin-pills">
@@ -267,7 +279,19 @@
                 <div class="admin-table-user">
                   <img v-if="item.photos?.[0]" :src="resolveAsset(item.photos[0])" alt="" />
                   <div>
-                    <strong>{{ item.name }}</strong>
+                    <div style="display: inline-flex; align-items: center; gap: 8px;">
+                      <span
+                        :title="item.is_online ? 'Connecte maintenant' : 'Non connecte'"
+                        :style="{
+                          width: '10px',
+                          height: '10px',
+                          borderRadius: '999px',
+                          display: 'inline-block',
+                          background: item.is_online ? '#22c55e' : '#ef4444'
+                        }"
+                      ></span>
+                      <strong>{{ item.name }}</strong>
+                    </div>
                     <div class="muted">{{ item.email || item.phone || "Sans contact" }}</div>
                     <div class="muted">{{ item.location || "Sans ville" }}</div>
                     <div class="admin-actions" style="margin-top: 8px;">
@@ -446,7 +470,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import adminApi from "../../adminApi";
 
 const props = defineProps({
@@ -478,6 +502,7 @@ const userSearch = ref("");
 const userStatus = ref("all");
 const userRole = ref("user");
 const verificationStatusFilter = ref("all");
+let liveStatusTimer = null;
 
 const setError = (err, fallback) => {
   notice.value = err.response?.data?.error || fallback;
@@ -585,8 +610,9 @@ const activateUserAccount = async (user) => {
       await adminApi.post(`/admin/users/${user.id}/verify-account`, {});
     } catch (err) {
       const status = Number(err?.response?.status || 0);
-      // Compatibility fallback for older backends that don't expose `/verify-account` yet.
-      if ([404, 405, 501].includes(status)) {
+      // Compatibility fallback: if dedicated endpoint is unavailable or unstable,
+      // force account activation through generic admin update.
+      if (![401, 403].includes(status)) {
         await adminApi.patch(`/admin/users/${user.id}`, { verified: true });
       } else {
         throw err;
@@ -721,5 +747,16 @@ const reviewVerification = async (item, action) => {
 
 onMounted(() => {
   refreshAll();
+  liveStatusTimer = setInterval(() => {
+    if (tab.value !== "users" && tab.value !== "overview") return;
+    Promise.all([loadUsers(), loadOverview()]).catch(() => {});
+  }, 10000);
+});
+
+onBeforeUnmount(() => {
+  if (liveStatusTimer) {
+    clearInterval(liveStatusTimer);
+    liveStatusTimer = null;
+  }
 });
 </script>
